@@ -19,7 +19,32 @@
 
 ---
 
-## **3. Product Development Cycle (SDD)**
+## **3. Tech Stack & Architecture**
+
+The orchestrator is built on a **Local-First, AI-Augmented** stack to ensure performance and privacy:
+
+*   **Frontend (Dashboard & Visualization):**
+    *   **Framework:** **Next.js 15+** (App Router, TypeScript).
+    *   **Styling:** **Vanilla CSS** (Premium Custom Design), **Framer Motion** (Animations).
+    *   **Visualization:** **Mermaid.js**, **D3.js** (for complex graphs).
+*   **Backend (World-Class AI Orchestration):**
+    *   **Language:** **Python 3.12+**.
+    *   **Framework:** **FastAPI** (Asynchronous, High-Performance).
+    *   **Agent Intelligence:** **LangGraph** (Multi-agent coordination) & **PydanticAI**.
+    *   **Durable Workflows:** **Temporal Python SDK** (Fault-tolerant execution).
+    *   **Analysis Engine:** **Tree-sitter** (Native Python bindings).
+    *   **Data Extraction:** **Instructor** (Strictly typed LLM outputs).
+*   **Data & Infrastructure:**
+    *   **Database:** **PostgreSQL** + **Prisma (Python Client)** or **SQLModel**.
+    *   **Cache/Broker:** **Redis**.
+    *   **Dependency Management:** **Poetry**.
+*   **Orchestration & DevOps:**
+    *   **Git Hooks:** **Husky** (Triggering Python analysis).
+    *   **Quality:** **Ruff** (Linting/Formatting), **Pytest**.
+
+---
+
+## **4. Product Development Cycle (SDD)**
 
 1.  **Specify:** Define requirements in `specs/[feature]/requirements.md`.
 2.  **Plan:** Analyze context and generate technical blueprints in `specs/[feature]/plan.md`.

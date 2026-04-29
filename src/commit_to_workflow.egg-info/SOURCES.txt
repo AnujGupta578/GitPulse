@@ -1,0 +1,6 @@
+pyproject.toml
+src/commit_to_workflow.egg-info/PKG-INFO
+src/commit_to_workflow.egg-info/SOURCES.txt
+src/commit_to_workflow.egg-info/dependency_links.txt
+src/commit_to_workflow.egg-info/requires.txt
+src/commit_to_workflow.egg-info/top_level.txt

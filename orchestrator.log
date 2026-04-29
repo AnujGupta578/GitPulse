@@ -1,0 +1,6 @@
+
+> commit-to-workflow@1.0.0 analyze
+> tsx src/index.ts
+
+🚀 Orchestrator Triggered
+Analyzing Commit: HEAD

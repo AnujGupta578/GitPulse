@@ -1,0 +1,19 @@
+[project]
+name = "commit-to-workflow"
+version = "0.1.0"
+description = "A world-class commit-driven workflow orchestrator."
+authors = [{ name = "Antigravity Agent", email = "agent@antigravity.ai" }]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.6.0",
+    "tree-sitter>=0.21.0",
+    "langgraph>=0.0.30",
+    "temporalio>=1.5.0",
+    "instructor>=1.0.0",
+    "ruff>=0.3.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
