@@ -1,1 +1,1 @@
-npm run analyze
+npm run analyze >> orchestrator.log 2>&1
