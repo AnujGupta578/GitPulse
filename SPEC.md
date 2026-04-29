@@ -17,7 +17,7 @@
 *   **Sync:** Every commit modifying system logic must update the Mermaid gitGraph and Architecture Map in `/docs`.
 *   **Verification:** Use automated visual regression for diagram consistency.
 
----
+*   **Persistence:** All strategic documents (Implementation Plans, Tasks, Walkthroughs) must be persisted in the code repository (Root or `/docs`). Do not rely solely on internal agent memory.
 
 ## **3. Tech Stack & Architecture**
 

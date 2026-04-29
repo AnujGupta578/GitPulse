@@ -1,0 +1,62 @@
+# --- Environment & Secrets ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# --- Python ---
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# --- Node.js & Next.js ---
+node_modules/
+dashboard/node_modules/
+.next/
+dashboard/.next/
+out/
+build/
+dist/
+.vercel
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Docker ---
+*.log
+docker-compose.override.yml
+
+# --- OS Specific ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Orchestrator Specific ---
+orchestrator.log
+docs/architecture_state.json
