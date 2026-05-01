@@ -1,22 +1,82 @@
 services:
+  # --- Identity & Intelligence Persistence ---
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: orchestrator
+      POSTGRES_PASSWORD: worldclass_password
+      POSTGRES_DB: orchestrator_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator -d orchestrator_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Durable Workflow Orchestration (Temporal) ---
+  temporal:
+    image: temporalio/admin-tools:1.24.2-tctl-1.18.1-cli-1.0.0
+    environment:
+      - TEMPORAL_ADDRESS=temporal-server:7233
+    depends_on:
+      - temporal-server
+  
+  temporal-server:
+    image: temporalio/auto-setup:1.24.2
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=orchestrator
+      - POSTGRES_PWD=worldclass_password
+      - POSTGRES_SEEDS=db
+      - DBNAME=temporal
+      - VISIBILITY_DBNAME=temporal_visibility
+    depends_on:
+      db:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:2.27.0
+    ports:
+      - "8080:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal-server:7233
+
+  # --- World-Class Analysis Engine ---
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://orchestrator:worldclass_password@db:5432/orchestrator_db
+      - TEMPORAL_ADDRESS=temporal-server:7233
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     ports:
       - "8000:8000"
     volumes:
       - .:/app
-    environment:
-      - COMMIT_SHA=HEAD
+    depends_on:
+      db:
+        condition: service_healthy
+      temporal-server:
+        condition: service_started
 
+  # --- Agentic Dashboard ---
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    depends_on:
-      - backend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

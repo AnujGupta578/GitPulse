@@ -1,9 +1,13 @@
 "use client";
 
 import React from "react";
-import { LayoutDashboard, Network, GitBranch, Settings, Database } from "lucide-react";
+import { LayoutDashboard, Network, GitBranch, Settings, Database, Activity } from "lucide-react";
 
-const Sidebar = () => {
+interface SidebarProps {
+  onSync: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ onSync }) => {
   const menuItems = [
     { icon: <LayoutDashboard size={20} />, label: "Dashboard", active: true },
     { icon: <Network size={20} />, label: "Architecture" },
@@ -40,6 +44,28 @@ const Sidebar = () => {
           </div>
         ))}
       </nav>
+      <div style={{ marginTop: "auto", padding: "1rem" }}>
+        <button 
+          onClick={onSync}
+          style={{ 
+            width: "100%", 
+            padding: "0.75rem", 
+            borderRadius: "8px", 
+            background: "linear-gradient(135deg, var(--accent-cyan), var(--accent-violet))",
+            color: "var(--bg-primary)",
+            fontWeight: "bold",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.5rem"
+          }}
+        >
+          <Activity size={18} />
+          Sync Engine
+        </button>
+      </div>
     </div>
   );
 };

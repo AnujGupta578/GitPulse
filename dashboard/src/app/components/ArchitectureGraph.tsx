@@ -6,6 +6,7 @@ import mermaid from "mermaid";
 mermaid.initialize({
   startOnLoad: true,
   theme: "dark",
+  securityLevel: "loose", // Required to allow click events
   themeVariables: {
     primaryColor: "#8b5cf6",
     primaryTextColor: "#f8fafc",
@@ -18,20 +19,26 @@ mermaid.initialize({
 
 interface ArchitectureGraphProps {
   code: string;
+  onComponentClick: (name: string) => void;
 }
 
-const ArchitectureGraph: React.FC<ArchitectureGraphProps> = ({ code }) => {
+const ArchitectureGraph: React.FC<ArchitectureGraphProps> = ({ code, onComponentClick }) => {
   const graphRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Attach callback to window for Mermaid to find it
+    (window as any).showComponentDetail = (nodeId: string) => {
+      onComponentClick(nodeId);
+    };
+
     if (graphRef.current) {
       mermaid.contentLoaded();
     }
-  }, [code]);
+  }, [code, onComponentClick]);
 
   return (
-    <div className="glass-card" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div ref={graphRef} className="mermaid">
+    <div className="glass-card" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto" }}>
+      <div ref={graphRef} className="mermaid" style={{ minWidth: "100%" }}>
         {code}
       </div>
     </div>

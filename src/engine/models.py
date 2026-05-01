@@ -1,5 +1,12 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from enum import Enum
+
+class C4Level(str, Enum):
+    CONTEXT = "Context"
+    CONTAINER = "Container"
+    COMPONENT = "Component"
+    CODE = "Code"
 
 class StructuralChange(BaseModel):
     type: str = Field(..., description="The type of component (class, function, etc.)")
@@ -7,6 +14,9 @@ class StructuralChange(BaseModel):
     parent: Optional[str] = Field(None, description="The name of the parent component")
     action: str = Field(..., description="The action performed (added, modified, deleted)")
     rationale: Optional[str] = Field(None, description="The architectural reasoning behind this change")
+    c4_level: C4Level = Field(default=C4Level.CODE, description="The C4 model level of this component")
+    tags: List[str] = Field(default_factory=list, description="Categorization tags (e.g., #api, #db)")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional language-specific metadata")
 
 class SecurityRisk(BaseModel):
     severity: str = Field(..., description="Severity level (Low, Medium, High, Critical)")

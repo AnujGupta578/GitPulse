@@ -1,109 +1,162 @@
 "use client";
 
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { GitBranch, Globe, CheckCircle2, ArrowRight } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { GitBranch, Globe, CheckCircle2, ArrowRight, Activity, Terminal, AlertCircle, Loader2 } from "lucide-react";
 
-const OnboardingFlow = () => {
+interface OnboardingFlowProps {
+  onComplete: () => void;
+}
+
+import Notification from "./Notification";
+
+const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{message: string, type: "success" | "error"} | null>(null);
   const [step, setStep] = useState(1);
+  const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
+  const [analysisLogs, setAnalysisLogs] = useState<string[]>([]);
+  const [isEngineFinished, setIsEngineFinished] = useState(false);
 
-  return (
-    <div className="glass-card" style={{ maxWidth: "600px", margin: "4rem auto", padding: "3rem" }}>
-      <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-        <h2 style={{ fontSize: "1.8rem", marginBottom: "0.5rem" }}>Connect Your Ecosystem</h2>
-        <p style={{ color: "var(--text-secondary)" }}>Initialize world-class architectural synthesis in seconds.</p>
-      </div>
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3rem", position: "relative" }}>
-        {[1, 2, 3].map((s) => (
-          <div key={s} style={{ 
-            width: "40px", 
-            height: "40px", 
-            borderRadius: "50%", 
-            background: step >= s ? "var(--accent-cyan)" : "var(--glass-border)",
-            color: step >= s ? "var(--bg-primary)" : "var(--text-secondary)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: "bold",
-            zIndex: 1
-          }}>
-            {step > s ? <CheckCircle2 size={20} /> : s}
+  // Auth Persistence Check
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      setIsAuthenticated(true);
+      // Auto-start local analysis if already authed
+      setStep(3);
+    }
+  }, []);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthenticating(true);
+    setAuthError(null);
+
+    const formData = new FormData(e.target as HTMLFormElement);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    const endpoint = isLogin ? "/auth/login" : "/auth/register";
+
+    try {
+      const response = await fetch(`${apiBase}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Authentication Failed");
+      }
+
+      if (isLogin) {
+        localStorage.setItem("token", data.access_token);
+        setIsAuthenticated(true);
+        setNotification({ message: "Authentication Successful", type: "success" });
+        // Transition directly to dashboard
+        setTimeout(() => onComplete(), 500);
+      } else {
+        setIsLogin(true);
+        setNotification({ message: "Registration Successful. Please Login.", type: "success" });
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+      setNotification({ message: err.message, type: "error" });
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="glass-card" style={{ maxWidth: "450px", margin: "6rem auto", padding: "3rem" }}>
+        <Notification 
+          message={notification?.message || null} 
+          type={notification?.type || "success"} 
+          onClose={() => setNotification(null)} 
+        />
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: "0.5rem" }}>{isLogin ? "Enterprise Portal" : "Onboard Organization"}</h2>
+          <p style={{ color: "var(--text-secondary)" }}>Access the world-class orchestration engine.</p>
+        </div>
+
+        {authError && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }} 
+            animate={{ opacity: 1, y: 0 }}
+            style={{ padding: "0.75rem", background: "rgba(239, 68, 68, 0.1)", border: "1px solid var(--danger)", borderRadius: "8px", marginBottom: "1.5rem", display: "flex", gap: "0.5rem", color: "var(--danger)", fontSize: "0.85rem" }}
+          >
+            <AlertCircle size={18} />
+            {authError}
+          </motion.div>
+        )}
+
+        <form onSubmit={handleAuth} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <label style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Corporate Email</label>
+            <input 
+              name="email"
+              type="email" 
+              placeholder="admin@gitpulse.com"
+              required
+              style={{ background: "var(--bg-secondary)", border: "1px solid var(--glass-border)", padding: "0.75rem", borderRadius: "8px", color: "white" }}
+            />
           </div>
-        ))}
-        <div style={{ position: "absolute", top: "20px", left: "0", right: "0", height: "2px", background: "var(--glass-border)", zIndex: 0 }} />
-      </div>
-
-      {step === 1 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h3 style={{ marginBottom: "1.5rem" }}>Select Integration</h3>
-          <div style={{ display: "grid", gap: "1rem" }}>
-            <button 
-              onClick={() => setStep(2)}
-              className="glass-card" 
-              style={{ display: "flex", alignItems: "center", gap: "1.5rem", width: "100%", textAlign: "left", cursor: "pointer" }}
-            >
-              <GitBranch size={32} color="var(--accent-cyan)" />
-              <div>
-                <p style={{ fontWeight: "600" }}>GitHub Enterprise</p>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Connect via GitHub App (Recommended)</p>
-              </div>
-              <ArrowRight style={{ marginLeft: "auto" }} size={20} />
-            </button>
-            <button className="glass-card" style={{ display: "flex", alignItems: "center", gap: "1.5rem", width: "100%", textAlign: "left", opacity: 0.5 }}>
-              <Globe size={32} />
-              <div>
-                <p style={{ fontWeight: "600" }}>Self-Hosted Git</p>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Connect via Webhooks & SSH</p>
-              </div>
-            </button>
-          </div>
-        </motion.div>
-      )}
-
-      {step === 2 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h3 style={{ marginBottom: "1.5rem" }}>Select Repositories</h3>
-          <div style={{ display: "grid", gap: "0.75rem", marginBottom: "2rem" }}>
-            {["core-payment-engine", "auth-service-v3", "marketing-landing-page"].map((repo) => (
-              <div key={repo} className="glass-card" style={{ display: "flex", justifyContent: "space-between", padding: "1rem" }}>
-                <span>{repo}</span>
-                <input type="checkbox" defaultChecked />
-              </div>
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <label style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Secure Token / Password</label>
+            <input 
+              name="password"
+              type="password" 
+              placeholder="••••••••"
+              required
+              style={{ background: "var(--bg-secondary)", border: "1px solid var(--glass-border)", padding: "0.75rem", borderRadius: "8px", color: "white" }}
+            />
           </div>
           <button 
-            onClick={() => setStep(3)}
+            type="submit"
+            disabled={isAuthenticating}
             style={{ 
-              width: "100%", 
+              marginTop: "1rem",
               padding: "1rem", 
               borderRadius: "8px", 
               background: "linear-gradient(135deg, var(--accent-cyan), var(--accent-violet))",
               color: "var(--bg-primary)",
               fontWeight: "700",
               border: "none",
-              cursor: "pointer"
+              cursor: isAuthenticating ? "not-allowed" : "pointer",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "0.5rem"
             }}
           >
-            Start Initial Synthesis
+            {isAuthenticating && <Loader2 size={20} className="animate-spin" />}
+            {isLogin ? "Authenticate" : "Initialize Workspace"}
           </button>
-        </motion.div>
-      )}
+        </form>
 
-      {step === 3 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: "center" }}>
-          <div style={{ marginBottom: "2rem", color: "var(--success)" }}>
-            <CheckCircle2 size={64} style={{ margin: "0 auto" }} />
-          </div>
-          <h3 style={{ marginBottom: "1rem" }}>Engine Synchronized</h3>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "2rem" }}>
-            The Council of Agents is performing a baseline analysis of your codebase. You'll be redirected to the dashboard shortly.
-          </p>
-          <div className="accent-text">Analyzing 1,240 commits...</div>
-        </motion.div>
-      )}
-    </div>
-  );
+        <div style={{ textAlign: "center", marginTop: "2rem" }}>
+          <button 
+            onClick={() => setIsLogin(!isLogin)}
+            style={{ background: "none", border: "none", color: "var(--accent-cyan)", cursor: "pointer", fontSize: "0.9rem" }}
+          >
+            {isLogin ? "New organization? Register" : "Existing account? Log In"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Once authenticated, return null to allow parent (page.tsx) to render the dashboard immediately
+  return null;
 };
 
 export default OnboardingFlow;
