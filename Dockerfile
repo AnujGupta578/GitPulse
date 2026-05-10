@@ -1,28 +1,24 @@
-FROM python:3.12-slim
+FROM node:20-slim
+
+# Install OpenSSL for Prisma Query Engine compatibility
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Set PYTHONPATH to ensure 'src' is discoverable as a module
-ENV PYTHONPATH=/app
-
-# Install system dependencies for Tree-sitter and git
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy project files
-COPY pyproject.toml .
+COPY package*.json ./
+COPY tsconfig.json ./
 COPY src/ ./src/
-COPY docs/ ./docs/
+COPY prisma/ ./prisma/
 
 # Install dependencies
-# Upgrade pip and install dependencies with increased timeout/retries
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --default-timeout=100 --retries 5 .
+RUN npm install
 
-# Expose FastAPI port
+# Generate Prisma client
+RUN npx prisma generate
+
+# Expose backend port
 EXPOSE 8000
 
-# Start the orchestrator
-CMD ["python", "src/main.py"]
+# Start the TS orchestrator server
+CMD ["sh", "-c", "npx prisma db push && npx tsx src/server.ts"]

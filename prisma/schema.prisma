@@ -1,0 +1,220 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "linux-musl"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  workspaces   Workspace[]
+  accounts     ConnectedAccount[]
+}
+
+model ConnectedAccount {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String // GITHUB, GITLAB, BITBUCKET
+  providerAccountId String
+  username          String
+  accessToken       String // Encrypted
+  refreshToken      String? // Encrypted
+  scopes            String?
+  tokenExpiresAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([provider, providerAccountId])
+}
+
+model Workspace {
+  id        String       @id @default(uuid())
+  name      String
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  repos     Repository[]
+}
+
+model Repository {
+  id               String    @id @default(uuid())
+  workspaceId      String
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name             String
+  provider         String // GITHUB, GITLAB, BITBUCKET, LOCAL
+  providerRepoId   String? // External ID from provider
+  owner            String    @default("")
+  url              String
+  description      String?
+  language         String?
+  defaultBranch    String    @default("main")
+  isPrivate        Boolean   @default(true)
+  connectionStatus String    @default("PENDING") // PENDING, CONNECTED, FAILED
+  syncStatus       String    @default("SYNC_PENDING") // SYNC_PENDING, INDEXING, ANALYZING, READY, FAILED
+  settings         Json? // Indexing rules, agent toggles, schedules
+  lastSyncedAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  commits  Commit[]
+  branches RepositoryBranch[]
+  webhooks Webhook[]
+  syncJobs SyncJob[]
+
+  @@index([workspaceId])
+}
+
+model RepositoryBranch {
+  id           String     @id @default(uuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  name         String
+  sha          String
+  isDefault    Boolean    @default(false)
+  syncStatus   String     @default("PENDING") // PENDING, INDEXING, ANALYZING, READY, FAILED
+  updatedAt    DateTime   @updatedAt
+
+  syncMetadata       BranchSyncStatus?
+  architecture       ArchitectureSnapshot[]
+  infra              InfrastructureSnapshot[]
+  dependencies       DependencySnapshot[]
+  EngineeringInsight EngineeringInsight[]
+
+  @@unique([repositoryId, name])
+  @@index([repositoryId])
+}
+
+model BranchSyncStatus {
+  id                 String           @id @default(uuid())
+  branchId           String           @unique
+  branch             RepositoryBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  status             String // INDEXED, OUTDATED, PENDING
+  lastAnalyzedCommit String?
+  commitDrift        Int              @default(0)
+  updatedAt          DateTime         @updatedAt
+}
+
+model ArchitectureSnapshot {
+  id        String           @id @default(uuid())
+  branchId  String
+  branch    RepositoryBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  commitSha String
+  topology  Json // Node/Edge data
+  metrics   Json? // Structural metrics
+  summary   String? // AI summary
+  createdAt DateTime         @default(now())
+
+  @@index([branchId])
+}
+
+model InfrastructureSnapshot {
+  id        String           @id @default(uuid())
+  branchId  String
+  branch    RepositoryBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  commitSha String
+  resources Json // Detected infra resources
+  createdAt DateTime         @default(now())
+
+  @@index([branchId])
+}
+
+model DependencySnapshot {
+  id           String           @id @default(uuid())
+  branchId     String
+  branch       RepositoryBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  commitSha    String
+  dependencies Json // List of dependencies
+  stats        Json // Summary stats
+  createdAt    DateTime         @default(now())
+
+  @@index([branchId])
+}
+
+model Webhook {
+  id             String     @id @default(uuid())
+  repositoryId   String
+  repository     Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  providerHookId String
+  events         String[]
+  secret         String
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+}
+
+model SyncJob {
+  id           String     @id @default(uuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  branchName   String? // Scoped to a branch, or null for global/repo-level
+  status       String // PENDING, RUNNING, COMPLETED, FAILED
+  type         String // INITIAL, INCREMENTAL, MANUAL
+  currentStep  String? // CLONING, PARSING_COMMITS, SCANNING_DEPS, etc.
+  progress     Int        @default(0) // 0-100
+  startedAt    DateTime   @default(now())
+  completedAt  DateTime?
+  error        String?
+
+  @@index([repositoryId])
+  @@index([status])
+}
+
+model Commit {
+  id           String     @id @default(uuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  sha          String
+  author       String
+  message      String
+  timestamp    DateTime
+
+  // AI Generated Metadata
+  intentSummary   String?
+  riskScore       Float? // 0.0 to 10.0
+  archImpactScore Float? // 0.0 to 10.0
+
+  createdAt DateTime @default(now())
+
+  @@unique([repositoryId, sha])
+  @@index([repositoryId])
+  @@index([timestamp])
+}
+
+model AgentJob {
+  id          String    @id @default(uuid())
+  workflowId  String    @unique
+  runId       String
+  agentName   String
+  status      String // RUNNING, COMPLETED, FAILED, TIMED_OUT
+  payload     Json?
+  result      Json?
+  error       String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+}
+
+model EngineeringInsight {
+  id             String           @id @default(uuid())
+  branchId       String
+  branch         RepositoryBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  title          String
+  content        String
+  recommendation String?
+  severity       String // LOW, MEDIUM, HIGH, CRITICAL
+  category       String // ARCHITECTURE, INFRASTRUCTURE, SECURITY, PERFORMANCE
+  createdAt      DateTime         @default(now())
+
+  @@index([branchId])
+}

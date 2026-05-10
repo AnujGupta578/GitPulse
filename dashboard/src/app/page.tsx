@@ -1,30 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Shield, Cpu, ExternalLink } from "lucide-react";
-import Sidebar from "./components/Sidebar";
 import ArchitectureGraph from "./components/ArchitectureGraph";
 import CommitFeed from "./components/CommitFeed";
-import OnboardingFlow from "./components/OnboardingFlow";
 import AnalysisOverlay from "./components/AnalysisOverlay";
+import ProcessVisualizer, { ISemanticSummary } from "./components/ProcessVisualizer";
 
 export default function Home() {
-  const [connected, setConnected] = useState<boolean | null>(null); // null for loading state
   const [selectedComponent, setSelectedComponent] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [semanticSummary, setSemanticSummary] = useState<ISemanticSummary | null>({
+    processId: "PRC-904X",
+    executiveSummary: "This update refactors the OrderService boundary, improving fault tolerance by cleanly decoupling Stripe dependencies.",
+    technicalImpact: "Impacts 3 microservices. Requires careful rolling deployment due to schema changes in the persistence layer.",
+    complexityScore: 6
+  });
 
-  // Persistence Check on Mount
-  useEffect(() => {
-    const isConnected = localStorage.getItem("connected") === "true";
-    const hasToken = !!localStorage.getItem("token");
-    setConnected(isConnected || hasToken);
-  }, []);
-
-  const handleComplete = () => {
-    localStorage.setItem("connected", "true");
-    setConnected(true);
-  };
 
   const sampleMermaid = `
 C4Context
@@ -42,20 +35,25 @@ C4Context
     UpdateElementStyle(PaymentService, $bgColor="#d4edda", $borderColor="#28a745")
   `;
 
-  if (connected === null) return null; // Prevent flash
-
-  if (!connected) {
-    return <OnboardingFlow onComplete={handleComplete} />;
-  }
-
   return (
-    <div className="dashboard-container">
-      <Sidebar onSync={() => setIsAnalyzing(true)} />
-      
+    <>
       <main className="main-view" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "2rem", position: "relative" }}>
         <AnimatePresence>
           {isAnalyzing && (
-            <AnalysisOverlay onClose={() => setIsAnalyzing(false)} />
+            <AnalysisOverlay onClose={async () => {
+              setIsAnalyzing(false);
+              try {
+                const res = await fetch('http://localhost:8000/summary');
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data && data.processId !== "PENDING") {
+                    setSemanticSummary(data);
+                  }
+                }
+              } catch (e) {
+                console.error("Failed to fetch summary:", e);
+              }
+            }} />
           )}
         </AnimatePresence>
 
@@ -127,6 +125,11 @@ C4Context
                     PASS: Encryption standards met. No sensitive leak detected in AST patterns.
                   </p>
                 </div>
+
+                {/* Dynamic Semantic Summary Injection */}
+                {semanticSummary && (
+                  <ProcessVisualizer summary={semanticSummary} />
+                )}
               </div>
 
               <button style={{ 
@@ -153,6 +156,6 @@ C4Context
       </main>
       
       <CommitFeed />
-    </div>
+    </>
   );
 }

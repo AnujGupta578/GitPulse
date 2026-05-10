@@ -52,29 +52,35 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
     environment:
-      - DATABASE_URL=postgresql+asyncpg://orchestrator:worldclass_password@db:5432/orchestrator_db
+      - DATABASE_URL=postgresql://orchestrator:worldclass_password@db:5432/orchestrator_db
       - TEMPORAL_ADDRESS=temporal-server:7233
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - GITHUB_CLIENT_ID=Ov23limhbbRSXPH91DSb
+      - GITHUB_CLIENT_SECRET=c5197145027339028a4afea4b220d4d5ce25a1d3
+      - GITHUB_REDIRECT_URI=http://localhost:8000/api/auth/github/callback
     ports:
       - "8000:8000"
     volumes:
       - .:/app
+      - /app/node_modules
     depends_on:
       db:
         condition: service_healthy
       temporal-server:
         condition: service_started
 
-  # --- Agentic Dashboard ---
   dashboard:
-    build:
-      context: ./dashboard
-      dockerfile: Dockerfile
+    image: node:20-slim
+    working_dir: /app
     ports:
       - "3000:3000"
+    volumes:
+      - ./dashboard:/app
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+    command: sh -c "npm run build && npm run start"
     depends_on:
       - backend
 

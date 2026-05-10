@@ -1,0 +1,10 @@
+1. Create a project specification (SPEC.md) in the root directory.
+2. Set up the agent's persistent memory and configure the skill usage.
+3. Implement the feature development workflow.
+4. Configure the operational boundaries and implement the necessary checks.
+5. Set up the visual regression testing and verify the generated artifacts.
+6. Implement the durability and fault tolerance for the workflows.
+7. Configure the security, compliance, and audit workflows.
+8. Implement the business process and semantic summarization workflows.
+9. Set up the multi-agent orchestration for the workflow automation.
+10. Implement the necessary checks for the visual regression testing and verify the generated artifacts.
