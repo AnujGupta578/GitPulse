@@ -1,25 +1,156 @@
-Project Specification
-====================
+# GitPulse — Project Specification
+_Last Updated: 2026-05-18 | Status: ACTIVE_
 
-## Introduction
-This project aims to automate the synthesis of architectural diagrams and durable workflows triggered by git commits.
+---
 
-## Objectives
-* Automate the generation of architectural diagrams from git commits
-* Implement durable workflows using stateful functions
-* Ensure scalability and production readiness
+## 1. Introduction
 
-## Requirements
-* Define the project's goals and objectives
-* Identify the target audience and their needs
-* Determine the technical requirements and constraints
+GitPulse automates the synthesis of interactive, living application workflow diagrams directly from source code. Diagrams are triggered by git commits and rendered as interactive canvases in the dashboard — giving engineers a real-time, semantic view of how their application executes, not just how its files are organized.
 
-## Scope
-This project will focus on creating a system that can automate the synthesis of architectural diagrams and durable workflows. It will not include any additional features or functionalities beyond this scope.
+---
 
-## Timeline
-The project is expected to be completed within the next 6 weeks.
+## 2. Objectives
 
-## Deliverables
-* A fully functional system that can automate the synthesis of architectural diagrams and durable workflows
-* A detailed report on the project's progress and outcomes
+- Generate **E2E Application Workflow Diagrams** by performing semantic AST analysis on the actual source code of a connected repository.
+- Represent code execution semantically as a directed call graph of typed workflow nodes.
+- Render diagrams as interactive, hierarchical flow canvases in the dashboard.
+- Update diagrams automatically on every sync / git push.
+
+---
+
+## 3. Technical Constraints
+
+The following constraints are **binding** and must be respected by all implementation work. They take precedence over any prior architectural decisions.
+
+---
+
+### 3.1 — Semantic AST Parsing
+
+**Constraint:** The backend MUST NOT use file-system directory traversal or import-dependency graphs as the primary mechanism for building the architecture diagram.
+
+**Required Approach:**
+- Use **local AST parsing** via **Tree-sitter** (Python/TypeScript/Go) or the **TypeScript Compiler API** (`ts-morph`) to analyze active execution blocks within source files.
+- Analysis MUST crawl from a defined **entry point** — a controller file, a server route registration file, or an identified framework bootstrap (e.g., `server.ts`, `app.py`, `main.go`) — and build a **directed call graph** by tracing function invocations transitively through the codebase.
+- Passive structural elements (type definitions, interfaces, pure data models, configuration-only files) MUST NOT be emitted as workflow nodes.
+- The parser MUST resolve **cross-file symbol references**: if `routeHandler` calls `SyncService.triggerSync`, the edge must be drawn across the file boundary.
+- Supported entry-point patterns:
+  - Express/Fastify: `app.get/post/put/patch/delete()`, `router.*()`, `fastify.get/post()`
+  - Next.js App Router: `export async function GET/POST/PUT/DELETE/PATCH()` in `app/**/route.ts`
+  - Next.js Pages Router: `export default function handler()`
+  - Python FastAPI/Flask: `@app.route()`, `@router.get/post()`, `@app.get/post()`
+  - Event-driven: `emitter.on()`, `process.on()`, `addEventListener()`
+
+---
+
+### 3.2 — Workflow Node Definitions
+
+**Constraint:** All nodes extracted from source code MUST be classified into one of exactly **four semantic node types**. No other top-level node types are permitted.
+
+| Node Type | Subtype Examples | Detection Signal |
+|---|---|---|
+| **`TriggerNode`** | `HTTP_ROUTE`, `WEBHOOK`, `CRON`, `EVENT_LISTENER` | Route registration calls; scheduler decorators; event `.on()` subscriptions |
+| **`ActionNode`** | `SERVICE_METHOD`, `BUSINESS_LOGIC`, `UTILITY_FUNCTION` | Named functions/methods that execute business logic, called from a Trigger or another Action |
+| **`DecisionNode`** | `IF_ELSE`, `SWITCH_CASE`, `TERNARY_GATEWAY` | Conditional branches (`if/else`, `switch`) within an Action body that alter execution flow |
+| **`IntegrationNode`** | `DATABASE_WRITE`, `DATABASE_READ`, `EXTERNAL_HTTP`, `THIRD_PARTY_SDK` | ORM/query calls (Prisma, SQLAlchemy, Mongoose); `fetch`/`axios`/`httpx` calls; 3rd-party SDK invocations |
+
+**Node Schema (stored in `ArchitectureSnapshot.topology`):**
+```json
+{
+  "id": "string (namespaced: '<type>::<qualifier>')",
+  "type": "TRIGGER | ACTION | DECISION | INTEGRATION",
+  "subtype": "string (from subtype list above)",
+  "label": "string (human-readable name)",
+  "metadata": {
+    "file": "string (repo-relative path)",
+    "line": "number",
+    "method": "string (HTTP method, if applicable)",
+    "path": "string (route path, if applicable)",
+    "condition": "string (branch condition text, if DECISION)",
+    "operation": "string (DB operation or HTTP verb, if INTEGRATION)"
+  }
+}
+```
+
+**Edge Schema:**
+```json
+{
+  "id": "string",
+  "source": "string (node id)",
+  "target": "string (node id)",
+  "label": "string (e.g. 'invokes', 'on:true', 'on:false', 'queries', 'calls')",
+  "type": "CALL | BRANCH_TRUE | BRANCH_FALSE | QUERY | EVENT"
+}
+```
+
+**Topology envelope (stored as `topology` JSON in DB, with version discriminator):**
+```json
+{
+  "schemaVersion": "2.0-workflow",
+  "nodes": [ ...WorkflowNodes ],
+  "edges": [ ...WorkflowEdges ]
+}
+```
+
+---
+
+### 3.3 — Canvas Rendering
+
+**Constraint:** The frontend Architecture tab MUST NOT use a circular/radial node layout. The circular layout provides no information about execution flow direction and is explicitly deprecated.
+
+**Required Approach:**
+- Replace the current radial SVG renderer with **React Flow** (`@xyflow/react` v12+) as the primary canvas library.
+- Use a **hierarchical tree / directed flow layout** generated by one of the following layout engines:
+  - **Dagre** (`dagre` npm package) — default choice; produces clean left-to-right DAG layouts
+  - **ELK** (`elkjs` + `@xyflow/react` ELK adapter) — use for complex graphs with many crossing edges
+- Layout direction: **Left → Right** (`LR`). Triggers appear on the left; Integrations appear on the right.
+- Each of the four node types MUST have a visually distinct custom node component with unique color coding:
+  - `TriggerNode` → **Cyan** (`#00F2FF`) — entry point indicator
+  - `ActionNode` → **Violet** (`#8B5CF6`) — business logic indicator
+  - `DecisionNode` → **Amber** (`#F59E0B`) — diamond/gateway shape indicator
+  - `IntegrationNode` → **Emerald** (`#10B981`) — leaf/sink indicator
+- Required UI capabilities:
+  - Node click → slide-in detail panel (file path, line number, full metadata)
+  - Filter toolbar to toggle visibility by node type
+  - Minimap for navigation on large graphs
+  - **Focus Flow mode**: clicking a `TriggerNode` highlights its complete downstream execution path to all leaf `IntegrationNode`s
+  - Zoom / pan / fit-to-view controls
+  - Export to PNG
+
+---
+
+## 4. Scope
+
+In scope:
+- Semantic workflow graph generation for TypeScript, Python, and Go source files
+- Integration with the existing `RepositorySyncPipeline` → `ArchitecturePipeline` → `ArchitectureSnapshot` persistence chain
+- Interactive React Flow canvas replacing the current architecture page
+
+Out of scope:
+- Runtime tracing / production traffic analysis (this is static analysis only)
+- Support for compiled languages (Java, C#, Rust) in v1
+- AI-generated natural language edge labels (deferred to v2)
+
+---
+
+## 5. Deliverables
+
+| # | Deliverable | Owner |
+|---|---|---|
+| 1 | `src/engine/semantic_workflow_parser.py` — 4-extractor AST engine | Backend |
+| 2 | `src/engine/workflow_engine.py` — orchestrator + GraphAssembler | Backend |
+| 3 | Updated `src/core/pipelines/ArchitecturePipeline.ts` — calls Python engine | Backend |
+| 4 | `dashboard/.../architecture/page.tsx` — React Flow canvas rewrite | Frontend |
+| 5 | Custom node components for all 4 workflow node types | Frontend |
+
+---
+
+## 6. Timeline
+
+| Phase | Scope | Target |
+|---|---|---|
+| Phase 1 | AST Engine — TriggerExtractor + ActionExtractor | Week 1 |
+| Phase 1 | AST Engine — DecisionExtractor + IntegrationExtractor + GraphAssembler | Week 2 |
+| Phase 2 | Backend wiring — Pipeline integration + API smoke test | Week 3 |
+| Phase 3 | Frontend — React Flow canvas + 4 node types + layout | Week 4 |
+| Phase 3 | Frontend — Filter toolbar + Detail panel + Focus Flow mode | Week 5 |
+| Phase 4 | Schema evolution + hardening + WorkflowSnapshot model | Week 6 |

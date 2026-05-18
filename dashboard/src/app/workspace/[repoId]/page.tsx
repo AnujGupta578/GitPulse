@@ -13,25 +13,43 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import { useRepository } from "../../context/RepositoryContext";
 
-export default function RepoOverviewPage({ params }: { params: { repoId: string } }) {
-  const repoId = params.repoId;
-  const { branch } = useRepository();
+export default function RepoOverviewPage() {
+  const { repoId, branch } = useRepository();
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
-    if (!repoId || repoId === "_" || repoId === "undefined") return;
+    if (!repoId || repoId === "_" || repoId === "undefined") {
+        console.warn("[Overview] Invalid repoId, skipping fetch:", repoId);
+        return;
+    }
+    
+    console.log(`[Overview] Fetching data for ${repoId} (branch: ${branch})...`);
     setIsLoading(true);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
     try {
-      const res = await fetch(`http://localhost:8000/api/repositories/${repoId}/overview?branch=${branch}`);
+      const res = await fetch(`http://localhost:8000/api/repositories/${repoId}/overview?branch=${branch}`, {
+          signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
       const result = await res.json();
-      if (!res.ok || !result.success) throw new Error(result.error || "Failed to fetch repository overview");
+      console.log("[Overview] Result:", result);
+      
+      if (!res.ok || !result.success) {
+          throw new Error(result.error || `HTTP ${res.status}: Failed to fetch overview`);
+      }
+      
       setData(result.data);
       setError(null);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message);
+      clearTimeout(timeoutId);
+      console.error("[Overview] Error during fetchData:", err);
+      setError(err.name === 'AbortError' ? "Request timed out. Please check your backend connection." : err.message);
     } finally {
       setIsLoading(false);
     }
@@ -53,10 +71,11 @@ export default function RepoOverviewPage({ params }: { params: { repoId: string 
       }
   };
 
-  // Lifecycle States
-  const isNeverSynced = !data?.branch || data.metrics?.indexedCommits === 0;
-  const isSyncing = data?.syncStatus?.isSyncing;
-  const isReady = data?.syncStatus?.current === 'READY' || data?.syncStatus?.current === 'COMPLETED';
+  // Lifecycle States — resilient to missing/empty status fields
+  const hasData = data && (data.metrics || data.recentCommits);
+  const isNotIndexed = !hasData || data?.status === 'NOT_INDEXED';
+  const isSyncing = data?.syncStatus?.isSyncing || data?.status === 'INDEXING';
+  const isReady = data?.status === 'READY' || (hasData && data?.syncStatus?.current === 'READY');
   const isFailed = data?.syncStatus?.current === 'FAILED';
 
   const metrics = [
@@ -87,10 +106,31 @@ export default function RepoOverviewPage({ params }: { params: { repoId: string 
     </motion.div>
   );
 
-  if (isLoading && !data) {
+  if (isLoading && !data && !error) {
     return (
       <div style={{ display: "flex", height: "100%", width: "100%", alignItems: "center", justifyContent: "center", background: "var(--bg-primary)", minHeight: "80vh" }}>
-         <div className="spin" style={{ width: "40px", height: "40px", border: "4px solid var(--accent-cyan)", borderTopColor: "transparent", borderRadius: "50%" }} />
+         <div style={{ textAlign: "center" }}>
+           <div className="spin" style={{ width: "48px", height: "48px", border: "4px solid var(--accent-cyan)", borderTopColor: "transparent", borderRadius: "50%", margin: "0 auto 1.5rem" }} />
+           <div style={{ color: "var(--text-secondary)", fontWeight: "600" }}>Synthesizing Repository Intelligence...</div>
+         </div>
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div style={{ display: "flex", height: "100%", width: "100%", alignItems: "center", justifyContent: "center", background: "var(--bg-primary)", minHeight: "80vh", padding: "2rem" }}>
+        <div className="glass-card" style={{ padding: "3rem", textAlign: "center", maxWidth: "500px", border: "1px solid var(--danger)" }}>
+          <AlertCircle size={48} color="var(--danger)" style={{ marginBottom: "1.5rem", opacity: 0.8 }} />
+          <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "0.75rem" }}>Intelligence Sync Error</h3>
+          <p style={{ color: "var(--text-secondary)", lineHeight: "1.6", marginBottom: "2rem" }}>{error}</p>
+          <button 
+            onClick={fetchData}
+            style={{ padding: "0.75rem 1.5rem", borderRadius: "8px", background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", border: "1px solid #ef4444", fontWeight: "700", cursor: "pointer" }}
+          >
+            Retry Connection
+          </button>
+        </div>
       </div>
     );
   }
@@ -115,7 +155,7 @@ export default function RepoOverviewPage({ params }: { params: { repoId: string 
              >
                 <RefreshCw size={48} color="var(--accent-cyan)" className="spin" />
              </motion.div>
-          ) : isNeverSynced ? (
+          ) : isNotIndexed ? (
             <motion.div 
               initial={{ opacity: 0, scale: 0.98, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}

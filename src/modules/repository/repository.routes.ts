@@ -31,13 +31,6 @@ export async function repositoryRoutes(fastify: FastifyInstance, options: Reposi
         return successResponse(repo);
     });
 
-    fastify.get('/api/repositories/:id/overview', async (request: any, reply) => {
-        const { id } = request.params;
-        const { branch = 'main' } = request.query;
-        const overview = await service.getOverview(id, branch);
-        if (!overview) return reply.status(404).send(errorResponse('Repository not found'));
-        return successResponse(overview);
-    });
 
     fastify.get('/api/repositories/:id/branches', async (request: any) => {
         const branches = await service.getBranches(request.params.id);

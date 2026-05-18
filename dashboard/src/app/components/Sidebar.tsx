@@ -17,9 +17,7 @@ const Sidebar = () => {
     { icon: <LayoutDashboard size={20} />, label: "Home", href: "/" },
     { icon: <Activity size={20} />, label: "Repositories", href: "/repositories" },
     { icon: <FolderGit2 size={20} />, label: "Connections", href: "/connections" },
-    { icon: <Activity size={20} />, label: "Activity Feed", href: "/activity" },
     { icon: <Bot size={20} />, label: "AI Agents", href: "/agents" },
-    { icon: <Share2 size={20} />, label: "Organization", href: "/insights" },
     { icon: <Settings size={20} />, label: "Settings", href: "/settings" },
   ];
 

@@ -66,3 +66,6 @@ Navigate to [http://localhost:3000](http://localhost:3000) to view the live arch
 ---
 
 **Built with world-class excellence for the next generation of software engineering.**
+
+taskkill /PID 10696 /F
+netstat --ano | findstr 3000

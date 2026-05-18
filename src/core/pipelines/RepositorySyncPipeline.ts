@@ -90,10 +90,19 @@ export class RepositorySyncPipeline {
             const infraPipeline = new InfrastructurePipeline(this.prisma);
             const infraResult = await infraPipeline.execute(repo.id, branchRecord.id, targetBranch.sha, infraFilesWithContent);
 
-            // STEP 6: Architecture
+            // STEP 6: Architecture (Semantic Workflow — SPEC.md §3.1)
             await updateJob('SYNTHESIZING_ARCHITECTURE', 95);
+            // Derive the local clone path — GitHubAdapter checks repos out under /tmp/gitpulse-clones/<owner>/<name>
+            let clonedRepoPath = process.env.REPO_CLONE_BASE_PATH
+                ? `${process.env.REPO_CLONE_BASE_PATH}/${repo.owner}/${repo.name}`
+                : `/tmp/gitpulse-clones/${repo.owner}/${repo.name}`;
+            const fs = await import('fs');
+            if (!fs.existsSync(clonedRepoPath)) {
+                clonedRepoPath = process.cwd();
+            }
             const archPipeline = new ArchitecturePipeline(this.prisma);
             const archResult = await archPipeline.execute(repo.id, branchRecord.id, targetBranch.sha, {
+                repoPath: clonedRepoPath,   // ← Required by ArchitectureAgent for semantic analysis
                 repoId: repo.id, branchName, tree: tree.map((f: any) => ({ path: f.path, type: f.type })),
                 detectedServices: [], infraFiles: infraFileNodes.map((f: any) => f.path)
             });

@@ -1,12 +1,24 @@
 import { PrismaClient } from '@prisma/client';
 
 export class AnalysisService {
-    constructor(private prisma: PrismaClient) {}
+    constructor(private prisma: PrismaClient) { }
+
+    private async resolveBranch(repoId: string, branchName: string): Promise<any> {
+        let b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
+        if (!b) {
+            const repo = await this.prisma.repository.findUnique({ where: { id: repoId }, include: { branches: true } });
+            if (repo) {
+                const fallbackName = repo.defaultBranch || (repo.branches[0]?.name) || 'main';
+                b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: fallbackName } });
+            }
+        }
+        return b;
+    }
 
     async getArchitecture(repoId: string, branchName: string = 'main') {
-        const b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
-        const defaultShape = { 
-            topology: { nodes: [], edges: [] }, 
+        const b = await this.resolveBranch(repoId, branchName);
+        const defaultShape = {
+            topology: { nodes: [], edges: [] },
             metrics: { services: 0, modules: 0, couplingScore: 0, dependencyCount: 0 },
             status: 'NOT_INDEXED'
         };
@@ -22,52 +34,98 @@ export class AnalysisService {
         };
     }
 
-    async getDrift(repoId: string, base: string = 'main', head: string) {
-        if (!head) return { added: [], removed: [], modified: [], addedEdges: [], removedEdges: [], summary: 'No head branch specified.' };
-        
-        const [b, h] = await Promise.all([
-            this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: base } }),
-            this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: head } })
-        ]);
-        
-        if (!b || !h) return { added: [], removed: [], modified: [], addedEdges: [], removedEdges: [], summary: 'Branch metadata missing.' };
-        
-        const [bs, hs] = await Promise.all([
-            this.prisma.architectureSnapshot.findFirst({ where: { branchId: b.id }, orderBy: { createdAt: 'desc' } }),
-            this.prisma.architectureSnapshot.findFirst({ where: { branchId: h.id }, orderBy: { createdAt: 'desc' } })
-        ]);
-        
-        const defaultDrift = { added: [], removed: [], modified: [], addedEdges: [], removedEdges: [], summary: 'One or both architecture snapshots missing.' };
-        if (!bs || !hs) return defaultDrift;
-        
-        const bn = (bs.topology as any)?.nodes || [];
-        const hn = (hs.topology as any)?.nodes || [];
-        const be = (bs.topology as any)?.edges || [];
-        const he = (hs.topology as any)?.edges || [];
+    async getDrift(repoId: string, source: string, target: string) {
+        try {
+            if (!source || !target) {
+                return { status: 'MISSING_PARAMS', message: 'Both source and target branches must be specified.' };
+            }
 
-        const added = hn.filter((x: any) => !bn.find((y: any) => y.id === x.id));
-        const removed = bn.filter((x: any) => !hn.find((y: any) => y.id === x.id));
-        const modified = hn.filter((x: any) => { 
-            const y = bn.find((z: any) => z.id === x.id); 
-            return y && (JSON.stringify(y) !== JSON.stringify(x)); 
-        });
+            if (source === target) {
+                return { status: 'IDENTICAL', message: 'Source and target branches are identical. No drift detected.' };
+            }
 
-        const addedEdges = he.filter((x: any) => !be.find((y: any) => y.id === x.id));
-        const removedEdges = be.filter((x: any) => !he.find((y: any) => y.id === x.id));
+            const [sBranch, tBranch] = await Promise.all([
+                this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: source } }),
+                this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: target } })
+            ]);
 
-        return {
-            added,
-            removed,
-            modified,
-            addedEdges,
-            removedEdges,
-            summary: `Architecture drift detected: ${added.length} added, ${removed.length} removed, ${modified.length} modified nodes.`,
-            riskScore: (added.length + removed.length + modified.length) > 5 ? 7.5 : 2.5
-        };
+            if (!sBranch) return { status: 'SOURCE_NOT_FOUND', message: `Source branch "${source}" not found.` };
+            if (!tBranch) return { status: 'TARGET_NOT_FOUND', message: `Target branch "${target}" not found.` };
+
+            const [sSnap, tSnap, sDeps, tDeps] = await Promise.all([
+                this.prisma.architectureSnapshot.findFirst({ where: { branchId: sBranch.id }, orderBy: { createdAt: 'desc' } }),
+                this.prisma.architectureSnapshot.findFirst({ where: { branchId: tBranch.id }, orderBy: { createdAt: 'desc' } }),
+                this.prisma.dependencySnapshot.findFirst({ where: { branchId: sBranch.id }, orderBy: { createdAt: 'desc' } }),
+                this.prisma.dependencySnapshot.findFirst({ where: { branchId: tBranch.id }, orderBy: { createdAt: 'desc' } })
+            ]);
+
+            if (!sSnap || !tSnap) {
+                return {
+                    status: 'NOT_INDEXED',
+                    message: "One or both branches have not been analyzed yet. Please run a sync for both branches to enable drift detection."
+                };
+            }
+
+            // 1. Topology Drift
+            const sn = (sSnap.topology as any)?.nodes || [];
+            const tn = (tSnap.topology as any)?.nodes || [];
+            const se = (sSnap.topology as any)?.edges || [];
+            const te = (tSnap.topology as any)?.edges || [];
+
+            const addedNodes = tn.filter((x: any) => !sn.find((y: any) => y.id === x.id));
+            const removedNodes = sn.filter((x: any) => !tn.find((y: any) => y.id === x.id));
+            const modifiedNodes = tn.filter((x: any) => {
+                const y = sn.find((z: any) => z.id === x.id);
+                return y && (JSON.stringify(y) !== JSON.stringify(x));
+            });
+
+            const addedEdges = te.filter((x: any) => !se.find((y: any) => (y.source === x.source && y.target === x.target)));
+            const removedEdges = se.filter((x: any) => !te.find((y: any) => (y.source === x.source && y.target === x.target)));
+
+            // 2. Dependency Drift
+            const sd = (sDeps?.dependencies as any[]) || [];
+            const td = (tDeps?.dependencies as any[]) || [];
+
+            const addedDeps = td.filter(x => !sd.find(y => y.name === x.name));
+            const upgradedDeps = td.filter(x => {
+                const y = sd.find(z => z.name === x.name);
+                return y && y.version !== x.version;
+            }).map(x => ({
+                name: x.name,
+                from: sd.find(z => z.name === x.name).version,
+                to: x.version
+            }));
+
+            const driftScore = (addedNodes.length * 10) + (removedNodes.length * 10) + (modifiedNodes.length * 5) + (upgradedDeps.length * 2);
+
+            return {
+                status: 'READY',
+                sourceBranch: source,
+                targetBranch: target,
+                summary: `Architecture drift detected: ${addedNodes.length} added, ${removedNodes.length} removed, ${modifiedNodes.length} modified nodes.`,
+                topologyChanges: {
+                    added: addedNodes,
+                    removed: removedNodes,
+                    modified: modifiedNodes,
+                    addedEdges: addedEdges.length,
+                    removedEdges: removedEdges.length
+                },
+                dependencyChanges: {
+                    added: addedDeps,
+                    upgraded: upgradedDeps
+                },
+                driftScore: Math.min(100, driftScore),
+                riskDelta: driftScore > 50 ? 'HIGH' : driftScore > 20 ? 'MEDIUM' : 'LOW',
+                timestamp: new Date().toISOString()
+            };
+        } catch (error: any) {
+            console.error(`[AnalysisService] getDrift FAILED:`, error);
+            throw error; // Let fastify handle 500 but log it
+        }
     }
 
     async getInfrastructure(repoId: string, branchName: string = 'main') {
-        const b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
+        const b = await this.resolveBranch(repoId, branchName);
         if (!b) return [];
         const s = await this.prisma.infrastructureSnapshot.findFirst({ where: { branchId: b.id }, orderBy: { createdAt: 'desc' } });
         if (!s) return [];
@@ -75,7 +133,7 @@ export class AnalysisService {
     }
 
     async getDependencies(repoId: string, branchName: string = 'main') {
-        const b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
+        const b = await this.resolveBranch(repoId, branchName);
         const defaultShape = { dependencies: [], stats: { total: 0, vulnerable: 0, outdated: 0 } };
         if (!b) return defaultShape;
         const s = await this.prisma.dependencySnapshot.findFirst({ where: { branchId: b.id }, orderBy: { createdAt: 'desc' } });
@@ -87,13 +145,13 @@ export class AnalysisService {
     }
 
     async getRisk(repoId: string, branchName: string = 'main') {
-        const b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
+        const b = await this.resolveBranch(repoId, branchName);
         if (!b) return { summary: { overallScore: 0, level: 'LOW', factors: [] }, vectors: { commits: [], architecture: {} } };
 
         const [latestArch, highRiskCommits] = await Promise.all([
             this.prisma.architectureSnapshot.findFirst({ where: { branchId: b.id }, orderBy: { createdAt: 'desc' } }),
-            this.prisma.commit.findMany({ 
-                where: { repositoryId: repoId, riskScore: { gte: 7.0 } }, 
+            this.prisma.commit.findMany({
+                where: { repositoryId: repoId, riskScore: { gte: 7.0 } },
                 orderBy: { timestamp: 'desc' },
                 take: 5
             })
@@ -124,12 +182,12 @@ export class AnalysisService {
     }
 
     async getInsights(repoId: string, branchName: string = 'main') {
-        const b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
+        const b = await this.resolveBranch(repoId, branchName);
         if (!b) return { insights: [], overallScore: 0, status: 'NOT_INDEXED' };
-        
+
         // Prefer real LLM-generated insights if they exist
         const storedInsights = await this.prisma.engineeringInsight.findMany({ where: { branchId: b.id } });
-        
+
         if (storedInsights.length > 0) {
             const score = Math.max(30, 100 - (storedInsights.filter(i => i.severity === 'HIGH' || i.severity === 'CRITICAL').length * 10));
             return { insights: storedInsights, overallScore: score, status: 'READY' };
@@ -221,16 +279,16 @@ export class AnalysisService {
     async getCommits(repoId: string, branchName?: string) {
         // Commits are stored by repositoryId; filter by timestamp window of the sync job for this branch
         // if branch is specified, try to scope by branch context (commits ingested for that branch)
-        return this.prisma.commit.findMany({ 
-            where: { repositoryId: repoId }, 
-            orderBy: { timestamp: 'desc' }, 
-            take: 50 
+        return this.prisma.commit.findMany({
+            where: { repositoryId: repoId },
+            orderBy: { timestamp: 'desc' },
+            take: 50
         });
     }
 
     async getServices(repoId: string, branchName: string = 'main') {
         // Services are derived from architecture topology nodes of type service/gateway
-        const b = await this.prisma.repositoryBranch.findFirst({ where: { repositoryId: repoId, name: branchName } });
+        const b = await this.resolveBranch(repoId, branchName);
         if (!b) return [];
         const s = await this.prisma.architectureSnapshot.findFirst({ where: { branchId: b.id }, orderBy: { createdAt: 'desc' } });
         if (!s) return [];
@@ -242,18 +300,101 @@ export class AnalysisService {
         return this.prisma.commit.findMany({ where: { repositoryId: repoId }, orderBy: { timestamp: 'desc' }, take: 20 });
     }
 
-    async getSummary(repoId: string) {
-        const [c, b, s, j] = await Promise.all([
-            this.prisma.commit.count({ where: { repositoryId: repoId } }),
-            this.prisma.repositoryBranch.count({ where: { repositoryId: repoId } }),
-            this.prisma.architectureSnapshot.findFirst({ where: { branch: { repositoryId: repoId } }, orderBy: { createdAt: 'desc' }, include: { branch: true } }),
-            this.prisma.syncJob.count({ where: { repositoryId: repoId, status: 'RUNNING' } })
+    async getOverview(id: string, branchName: string = 'main') {
+        const repo = await this.prisma.repository.findUnique({ where: { id }, include: { branches: true } });
+        if (!repo) return null;
+
+        const repoBranch = await this.resolveBranch(id, branchName);
+        if (!repoBranch) return { status: 'NOT_INDEXED', message: `Branch "${branchName}" has not been tracked yet.` };
+
+        const [latestArch, latestInfra, latestDeps, recentCommits, syncJobs] = await Promise.all([
+            this.prisma.architectureSnapshot.findFirst({ where: { branchId: repoBranch.id }, orderBy: { createdAt: 'desc' } }),
+            this.prisma.infrastructureSnapshot.findFirst({ where: { branchId: repoBranch.id }, orderBy: { createdAt: 'desc' } }),
+            this.prisma.dependencySnapshot.findFirst({ where: { branchId: repoBranch.id }, orderBy: { createdAt: 'desc' } }),
+            this.prisma.commit.findMany({ where: { repositoryId: id }, orderBy: { timestamp: 'desc' }, take: 10 }),
+            this.prisma.syncJob.findMany({ where: { repositoryId: id, branchName }, orderBy: { startedAt: 'desc' }, take: 5 })
         ]);
-        return { 
-            commitCount: c, 
-            branchCount: b, 
-            latestSnapshot: s ? { branch: s.branch.name, timestamp: s.createdAt, nodeCount: (s.topology as any)?.nodes?.length || 0 } : null, 
-            isSyncing: j > 0 
+
+        const branchSyncStatus = String(repoBranch.syncStatus || '');
+        if (!latestArch && !branchSyncStatus) {
+            return { status: 'NOT_INDEXED', message: "Branch has not been analyzed yet" };
+        }
+
+        const commitsForVelocity = await this.prisma.commit.findMany({
+            where: {
+                repositoryId: id,
+                timestamp: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) }
+            },
+            select: { timestamp: true }
+        });
+
+        const velocityMap: Record<string, number> = {};
+        commitsForVelocity.forEach(c => {
+            const day = c.timestamp.toISOString().split('T')[0] as string;
+            velocityMap[day] = (velocityMap[day] || 0) + 1;
+        });
+
+        const velocity = Object.entries(velocityMap).map(([day, count]) => ({ day, count }));
+
+        const metrics = {
+            indexedCommits: await this.prisma.commit.count({ where: { repositoryId: id } }),
+            componentCount: (latestArch?.topology as any)?.nodes?.length || 0,
+            serviceCount: (latestArch?.topology as any)?.nodes?.filter((n: any) => n.type === 'service' || n.type === 'gateway').length || 0,
+            infraAssets: (latestInfra?.resources as any[])?.length || 0,
+            dependencyCount: (latestDeps?.stats as any)?.total || 0,
+            lastSync: repoBranch.updatedAt,
+            couplingScore: (latestArch?.metrics as any)?.couplingScore || 0,
+            layerIntegrity: (latestArch?.metrics as any)?.layerIntegrity || 0
+        };
+
+        const topStatus = branchSyncStatus === 'READY' ? 'READY' : (branchSyncStatus ? 'INDEXING' : 'NOT_INDEXED');
+
+        return {
+            status: topStatus,
+            repository: repo,
+            branch: repoBranch,
+            syncStatus: {
+                current: branchSyncStatus || 'PENDING',
+                jobs: syncJobs,
+                isSyncing: syncJobs.some((j: any) => j.status === 'RUNNING' || j.status === 'INDEXING')
+            },
+            metrics,
+            architectureSnapshot: latestArch,
+            recentCommits,
+            velocity,
+            topology: latestArch?.topology ? {
+                nodes: (latestArch.topology as any).nodes?.slice(0, 10) || [],
+                edges: (latestArch.topology as any).edges?.slice(0, 10) || [],
+                totalNodes: (latestArch.topology as any).nodes?.length || 0
+            } : null,
+            aiInsights: {
+                summary: latestArch?.summary || "Analysis pending. Trigger a sync to generate architectural insights.",
+                readiness: branchSyncStatus === 'READY' ? 'COMPLETE' : 'INCOMPLETE'
+            }
+        };
+    }
+    async getSummary(repoId: string) {
+        const [repo, commits, branches] = await Promise.all([
+            this.prisma.repository.findUnique({ where: { id: repoId }, include: { branches: true } }),
+            this.prisma.commit.count({ where: { repositoryId: repoId } }),
+            this.prisma.repositoryBranch.findMany({ where: { repositoryId: repoId } })
+        ]);
+
+        if (!repo) return null;
+
+        const latestSnapshot = await this.prisma.architectureSnapshot.findFirst({
+            where: { branch: { repositoryId: repoId } },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        return {
+            repository: repo,
+            commitCount: commits,
+            branchCount: branches.length,
+            latestSnapshot: latestSnapshot ? {
+                timestamp: latestSnapshot.createdAt,
+                commitSha: latestSnapshot.commitSha
+            } : null
         };
     }
 }

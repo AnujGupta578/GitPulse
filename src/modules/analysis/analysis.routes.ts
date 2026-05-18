@@ -10,14 +10,26 @@ export async function analysisRoutes(fastify: FastifyInstance, options: Analysis
         return successResponse(arch);
     });
 
+    fastify.get('/api/repositories/:id/overview', async (request: any, reply) => {
+        const { id } = request.params;
+        const { branch = 'main' } = request.query;
+        try {
+            const overview = await service.getOverview(id, branch);
+            if (!overview) return reply.status(404).send(errorResponse('Repository not found'));
+            return successResponse(overview);
+        } catch (error: any) {
+            return reply.status(500).send(errorResponse(error.message));
+        }
+    });
+
     fastify.get('/api/repositories/:id/drift', async (request: any, reply) => {
         const { id } = request.params;
-        const { base = 'main', head } = request.query;
+        const { source, target } = request.query;
         try {
-            const drift = await service.getDrift(id, base, head);
+            const drift = await service.getDrift(id, source, target);
             return successResponse(drift);
         } catch (error: any) {
-            return reply.status(404).send(errorResponse(error.message));
+            return reply.status(500).send(errorResponse(error.message));
         }
     });
 

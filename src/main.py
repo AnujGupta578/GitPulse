@@ -17,6 +17,7 @@ from temporalio.worker import Worker
 
 # Internal Imports
 from src.engine.parser import IntentParser
+from src.engine.workflow_engine import WorkflowSemanticEngine
 from src.database.session import get_db, init_db
 from src.database.models import User, ArchitectureState
 from src.workflows.analysis_workflow import RepositoryAnalysisWorkflow
@@ -159,5 +160,32 @@ async def perform_analysis_live(commit_sha: str, stream=False):
 async def stream_analysis(commit_sha: str = "HEAD"):
     return StreamingResponse(perform_analysis_live(commit_sha, stream=True), media_type="text/event-stream")
 
+
+# ---------------------------------------------------------------------------
+# INTERNAL: Semantic Workflow Analysis — SPEC.md §3.1
+# NOT exposed via CORS (localhost only).  Called by ArchitectureAgent.ts.
+# ---------------------------------------------------------------------------
+
+class WorkflowAnalysisRequest(BaseModel):
+    repo_path: str
+    language_hint: str = "auto"  # future use — per-file detection is already the default
+
+
+@app.post("/internal/analyze-workflow")
+async def analyze_workflow(request: WorkflowAnalysisRequest):
+    """
+    Runs the full SemanticWorkflowParser + GraphAssembler over a local repo
+    checkout and returns a topology compatible with schemaVersion 2.0-workflow.
+
+    Expected callers: ArchitectureAgent.ts (via internal HTTP, 2-min timeout).
+    """
+    try:
+        engine = WorkflowSemanticEngine(request.repo_path)
+        result = await engine.run()
+        return {"success": True, "data": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

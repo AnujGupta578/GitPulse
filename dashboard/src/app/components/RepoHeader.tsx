@@ -21,26 +21,9 @@ const RepoHeader = ({
   lastIndexed,
   onSync
 }: any) => {
-  const { branch: currentBranch, setBranch, repoId } = useRepository();
+  const { branch: currentBranch, setBranch, repoId, branches, isLoading } = useRepository();
   const [isBranchOpen, setIsBranchOpen] = useState(false);
   const [branchSearch, setBranchSearch] = useState("");
-  const [branches, setBranches] = useState<BranchMetadata[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Fetch branches from API
-  useEffect(() => {
-    if (!repoId || repoId === "_" || repoId === "undefined") return;
-    setIsLoading(true);
-    fetch(`http://localhost:8000/api/repositories/${repoId}/branches`)
-      .then(res => res.json())
-      .then(result => {
-        if (result.success && Array.isArray(result.data)) {
-            setBranches(result.data);
-        }
-      })
-      .catch(console.error)
-      .finally(() => setIsLoading(false));
-  }, [repoId]);
 
   const filteredBranches = branches.filter(b => b.name.toLowerCase().includes(branchSearch.toLowerCase()));
 
