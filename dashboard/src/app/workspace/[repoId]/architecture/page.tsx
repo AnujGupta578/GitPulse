@@ -79,6 +79,25 @@ export default function ArchitecturePage() {
   const [connectedSources, setConnectedSources] = useState<any[]>([]);
   const [connectedTargets, setConnectedTargets] = useState<any[]>([]);
 
+  // Path-to-Test E2E Generation State
+  const [isGeneratingTest, setIsGeneratingTest] = useState(false);
+  const [generatedTestResult, setGeneratedTestResult] = useState<any>(null);
+  const [testGenerationError, setTestGenerationError] = useState<string | null>(null);
+  const [selectedFramework, setSelectedFramework] = useState<'playwright' | 'cypress'>('playwright');
+
+  // Workflow Exporter State
+  const [isExportingWorkflow, setIsExportingWorkflow] = useState(false);
+  const [exportedWorkflowResult, setExportedWorkflowResult] = useState<any>(null);
+  const [workflowExportError, setWorkflowExportError] = useState<string | null>(null);
+  const [selectedExportType, setSelectedExportType] = useState<'asl' | 'temporal'>('asl');
+
+  useEffect(() => {
+    setGeneratedTestResult(null);
+    setTestGenerationError(null);
+    setExportedWorkflowResult(null);
+    setWorkflowExportError(null);
+  }, [selectedNode]);
+
   // Fetch topology
   const fetchTopology = useCallback(() => {
     setIsLoading(true);
@@ -309,6 +328,64 @@ export default function ArchitecturePage() {
   // Reset focus mode
   const resetFocusMode = () => {
     setFocusTriggerId(null);
+  };
+
+  // Generate E2E test via Path-to-Test
+  const handleGenerateTest = async () => {
+    if (!selectedNode) return;
+    setIsGeneratingTest(true);
+    setTestGenerationError(null);
+    setGeneratedTestResult(null);
+    try {
+      const res = await fetch(`http://localhost:8000/api/repositories/${repoId}/generate-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          triggerNodeId: selectedNode.id,
+          branch: branch,
+          testType: selectedFramework,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGeneratedTestResult(data.data);
+      } else {
+        setTestGenerationError(data.error || "Failed to generate E2E test.");
+      }
+    } catch (e: any) {
+      setTestGenerationError(e.message || "Failed to generate E2E test.");
+    } finally {
+      setIsGeneratingTest(false);
+    }
+  };
+
+  // Export Workflow via Exporter Engine
+  const handleExportWorkflow = async () => {
+    if (!selectedNode) return;
+    setIsExportingWorkflow(true);
+    setWorkflowExportError(null);
+    setExportedWorkflowResult(null);
+    try {
+      const res = await fetch(`http://localhost:8000/api/repositories/${repoId}/export-workflow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          triggerNodeId: selectedNode.id,
+          branch: branch,
+          exportType: selectedExportType,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExportedWorkflowResult(data.data);
+      } else {
+        setWorkflowExportError(data.error || "Failed to export workflow.");
+      }
+    } catch (e: any) {
+      setWorkflowExportError(e.message || "Failed to export workflow.");
+    } finally {
+      setIsExportingWorkflow(false);
+    }
   };
 
   const hasValidWorkflowTopology =
@@ -852,6 +929,441 @@ export default function ArchitecturePage() {
                   <div className="glass-card" style={{ padding: "0.85rem 1.2rem" }}>
                     <div style={{ fontSize: "0.65rem", color: "var(--text-secondary)", fontWeight: "bold", textTransform: "uppercase" }}>Client Command</div>
                     <div style={{ fontWeight: "700", color: NODE_COLORS.INTEGRATION.border, fontSize: "0.85rem", marginTop: "0.25rem" }}>{selectedNode.metadata.operation}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Path-to-Test E2E Generator Section */}
+            {selectedNode.type === "TRIGGER" && (
+              <div
+                className="glass-card"
+                style={{
+                  padding: "1.2rem",
+                  border: "1.1px dashed rgba(0, 242, 255, 0.4)",
+                  background: "rgba(0, 242, 255, 0.02)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.85rem",
+                  borderRadius: "8px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--accent-cyan)",
+                    fontWeight: "bold",
+                    textTransform: "uppercase",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
+                  }}
+                >
+                  <Zap size={14} style={{ fill: "rgba(0, 242, 255, 0.2)" }} />
+                  Path-to-Test E2E Engine
+                </div>
+                <p style={{ fontSize: "0.72rem", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                  Trace execution downstream to terminal integration & database nodes and auto-generate a runnable Playwright or Cypress E2E test file.
+                </p>
+
+                {/* Framework Selection Segment Control */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <label style={{ fontSize: "0.65rem", color: "var(--text-secondary)", fontWeight: "bold", textTransform: "uppercase" }}>
+                    Select Test Framework
+                  </label>
+                  <div
+                    style={{
+                      display: "flex",
+                      background: "rgba(10, 14, 20, 0.8)",
+                      border: "1px solid var(--glass-border)",
+                      borderRadius: "6px",
+                      padding: "2px",
+                    }}
+                  >
+                    <button
+                      onClick={() => setSelectedFramework("playwright")}
+                      style={{
+                        flex: 1,
+                        padding: "0.35rem 0.75rem",
+                        background: selectedFramework === "playwright" ? "rgba(0, 242, 255, 0.15)" : "transparent",
+                        border: "none",
+                        borderRadius: "4px",
+                        color: selectedFramework === "playwright" ? "#fff" : "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Playwright
+                    </button>
+                    <button
+                      onClick={() => setSelectedFramework("cypress")}
+                      style={{
+                        flex: 1,
+                        padding: "0.35rem 0.75rem",
+                        background: selectedFramework === "cypress" ? "rgba(0, 242, 255, 0.15)" : "transparent",
+                        border: "none",
+                        borderRadius: "4px",
+                        color: selectedFramework === "cypress" ? "#fff" : "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Cypress
+                    </button>
+                  </div>
+                </div>
+
+                {/* Generate Button */}
+                <button
+                  onClick={handleGenerateTest}
+                  disabled={isGeneratingTest}
+                  style={{
+                    padding: "0.65rem 1rem",
+                    background: "linear-gradient(135deg, var(--accent-cyan) 0%, #0099ff 100%)",
+                    border: "none",
+                    borderRadius: "6px",
+                    color: "#05070a",
+                    fontWeight: 700,
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                    boxShadow: "0 0 12px rgba(0, 242, 255, 0.3)",
+                    transition: "all 0.2s",
+                    opacity: isGeneratingTest ? 0.7 : 1,
+                  }}
+                >
+                  {isGeneratingTest ? (
+                    <>
+                      <RefreshCw size={14} className="spin" />
+                      Generating E2E Test Spec...
+                    </>
+                  ) : (
+                    <>
+                      <FileCode size={14} />
+                      {generatedTestResult ? "Regenerate E2E Test" : "Generate E2E Test"}
+                    </>
+                  )}
+                </button>
+
+                {/* Error Banner */}
+                {testGenerationError && (
+                  <div
+                    style={{
+                      padding: "0.65rem",
+                      background: "rgba(239, 68, 68, 0.05)",
+                      border: "1px solid rgba(239, 68, 68, 0.2)",
+                      borderRadius: "6px",
+                      color: "rgba(239, 68, 68, 0.9)",
+                      fontSize: "0.7rem",
+                      lineHeight: "1.3",
+                    }}
+                  >
+                    <strong>Error:</strong> {testGenerationError}
+                  </div>
+                )}
+
+                {/* Success/Result View */}
+                {generatedTestResult && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "0.25rem" }}>
+                    <div
+                      style={{
+                        padding: "0.65rem",
+                        background: "rgba(16, 185, 129, 0.05)",
+                        border: "1px solid rgba(16, 185, 129, 0.2)",
+                        borderRadius: "6px",
+                        color: "var(--success)",
+                        fontSize: "0.7rem",
+                        lineHeight: "1.4",
+                      }}
+                    >
+                      <strong>Success!</strong> Test suite generated and saved locally to:
+                      <div
+                        style={{
+                          fontFamily: "monospace",
+                          background: "rgba(0,0,0,0.3)",
+                          padding: "0.35rem",
+                          borderRadius: "4px",
+                          marginTop: "0.25rem",
+                          fontSize: "0.62rem",
+                          wordBreak: "break-all",
+                          color: "#fff",
+                        }}
+                      >
+                        /tests/e2e/gitpulse-generated/{generatedTestResult.filename}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)", fontWeight: "bold", textTransform: "uppercase" }}>
+                          Generated Spec Source
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(generatedTestResult.code);
+                            alert("Test code copied to clipboard!");
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--accent-cyan)",
+                            fontSize: "0.65rem",
+                            cursor: "pointer",
+                            fontWeight: "bold",
+                            padding: 0,
+                          }}
+                        >
+                          Copy Code
+                        </button>
+                      </div>
+                      <pre
+                        style={{
+                          background: "rgba(0,0,0,0.45)",
+                          padding: "0.85rem",
+                          borderRadius: "6px",
+                          border: "1px solid var(--glass-border)",
+                          maxHeight: "220px",
+                          overflow: "auto",
+                          fontSize: "0.65rem",
+                          fontFamily: "monospace",
+                          color: "#cbd5e1",
+                          lineHeight: "1.4",
+                        }}
+                      >
+                        {generatedTestResult.code}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Workflow Exporter Section */}
+            {selectedNode.type === "TRIGGER" && (
+              <div
+                className="glass-card"
+                style={{
+                  padding: "1.2rem",
+                  border: "1.1px dashed rgba(139, 92, 246, 0.4)",
+                  background: "rgba(139, 92, 246, 0.02)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.85rem",
+                  borderRadius: "8px",
+                  marginTop: "0.5rem"
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#8B5CF6",
+                    fontWeight: "bold",
+                    textTransform: "uppercase",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
+                  }}
+                >
+                  <Cpu size={14} style={{ fill: "rgba(139, 92, 246, 0.2)" }} />
+                  Workflow State Machine Exporter
+                </div>
+                <p style={{ fontSize: "0.72rem", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                  Export this semantic call graph directly into executable, stateful backend orchestrations. Preserves wait delays, retry rules, and AST error boundaries.
+                </p>
+
+                {/* Exporter Target Selection */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <label style={{ fontSize: "0.65rem", color: "var(--text-secondary)", fontWeight: "bold", textTransform: "uppercase" }}>
+                    Select Exporter Target
+                  </label>
+                  <div
+                    style={{
+                      display: "flex",
+                      background: "rgba(10, 14, 20, 0.8)",
+                      border: "1px solid var(--glass-border)",
+                      borderRadius: "6px",
+                      padding: "2px",
+                    }}
+                  >
+                    <button
+                      onClick={() => setSelectedExportType("asl")}
+                      style={{
+                        flex: 1,
+                        padding: "0.35rem 0.75rem",
+                        background: selectedExportType === "asl" ? "rgba(139, 92, 246, 0.15)" : "transparent",
+                        border: "none",
+                        borderRadius: "4px",
+                        color: selectedExportType === "asl" ? "#fff" : "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      AWS Step Functions (ASL)
+                    </button>
+                    <button
+                      onClick={() => setSelectedExportType("temporal")}
+                      style={{
+                        flex: 1,
+                        padding: "0.35rem 0.75rem",
+                        background: selectedExportType === "temporal" ? "rgba(139, 92, 246, 0.15)" : "transparent",
+                        border: "none",
+                        borderRadius: "4px",
+                        color: selectedExportType === "temporal" ? "#fff" : "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Temporal Workflow (TS)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Export Button */}
+                <button
+                  onClick={handleExportWorkflow}
+                  disabled={isExportingWorkflow}
+                  style={{
+                    padding: "0.65rem 1rem",
+                    background: "linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)",
+                    border: "none",
+                    borderRadius: "6px",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                    boxShadow: "0 0 12px rgba(139, 92, 246, 0.3)",
+                    transition: "all 0.2s",
+                    opacity: isExportingWorkflow ? 0.7 : 1,
+                  }}
+                >
+                  {isExportingWorkflow ? (
+                    <>
+                      <RefreshCw size={14} className="spin" />
+                      Exporting State Machine...
+                    </>
+                  ) : (
+                    <>
+                      <Cpu size={14} />
+                      {exportedWorkflowResult ? "Re-Export Logic" : "Export Stateful Logic"}
+                    </>
+                  )}
+                </button>
+
+                {/* Error Banner */}
+                {workflowExportError && (
+                  <div
+                    style={{
+                      padding: "0.65rem",
+                      background: "rgba(239, 68, 68, 0.05)",
+                      border: "1px solid rgba(239, 68, 68, 0.2)",
+                      borderRadius: "6px",
+                      color: "rgba(239, 68, 68, 0.9)",
+                      fontSize: "0.7rem",
+                      lineHeight: "1.3",
+                    }}
+                  >
+                    <strong>Error:</strong> {workflowExportError}
+                  </div>
+                )}
+
+                {/* Success/Result View */}
+                {exportedWorkflowResult && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "0.25rem" }}>
+                    <div
+                      style={{
+                        padding: "0.65rem",
+                        background: "rgba(16, 185, 129, 0.05)",
+                        border: "1px solid rgba(16, 185, 129, 0.2)",
+                        borderRadius: "6px",
+                        color: "var(--success)",
+                        fontSize: "0.7rem",
+                        lineHeight: "1.4",
+                      }}
+                    >
+                      <strong>Success!</strong> Workflow state machine saved locally to:
+                      <div
+                        style={{
+                          fontFamily: "monospace",
+                          background: "rgba(0,0,0,0.3)",
+                          padding: "0.35rem",
+                          borderRadius: "4px",
+                          marginTop: "0.25rem",
+                          fontSize: "0.62rem",
+                          wordBreak: "break-all",
+                          color: "#fff",
+                        }}
+                      >
+                        /exports/workflow-generated/{exportedWorkflowResult.filename}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)", fontWeight: "bold", textTransform: "uppercase" }}>
+                          Generated Pipeline Source
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(exportedWorkflowResult.code);
+                            alert("Workflow source code copied to clipboard!");
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "#8B5CF6",
+                            fontSize: "0.65rem",
+                            cursor: "pointer",
+                            fontWeight: "bold",
+                            padding: 0,
+                          }}
+                        >
+                          Copy Code
+                        </button>
+                      </div>
+                      <pre
+                        style={{
+                          background: "rgba(0,0,0,0.45)",
+                          padding: "0.85rem",
+                          borderRadius: "6px",
+                          border: "1px solid var(--glass-border)",
+                          maxHeight: "220px",
+                          overflow: "auto",
+                          fontSize: "0.65rem",
+                          fontFamily: "monospace",
+                          color: "#cbd5e1",
+                          lineHeight: "1.4",
+                        }}
+                      >
+                        {exportedWorkflowResult.code}
+                      </pre>
+                    </div>
                   </div>
                 )}
               </div>

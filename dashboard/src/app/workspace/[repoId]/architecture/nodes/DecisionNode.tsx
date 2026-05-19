@@ -13,7 +13,7 @@
 import React from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { GitBranch } from 'lucide-react';
-import { NODE_COLORS } from '../lib/nodeColors';
+import { NODE_COLORS, STATE_STYLES, type NodeStateKey } from '../lib/nodeColors';
 
 const C = NODE_COLORS.DECISION;
 
@@ -30,6 +30,15 @@ export default function DecisionNode({ data, selected }: NodeProps) {
     const meta = data?.metadata ?? {};
     const subLabel = SUBTYPE_LABELS[data?.subtype] ?? data?.subtype ?? 'Decision';
     const condition = meta.condition ?? data?.label ?? 'condition';
+    
+    const stateKey = data?.state as NodeStateKey | undefined;
+    const isChanged = stateKey && STATE_STYLES[stateKey];
+    
+    const borderCol = isChanged ? STATE_STYLES[stateKey].border : (selected ? '#fff' : C.border);
+    const boxShad = selected
+        ? `0 0 0 2px ${isChanged ? STATE_STYLES[stateKey].border : C.border}, 0 0 24px ${isChanged ? STATE_STYLES[stateKey].glow : C.glow}`
+        : `0 0 16px ${isChanged ? STATE_STYLES[stateKey].glow : C.glow}`;
+    const opacityVal = stateKey === 'deleted' ? 0.65 : 1.0;
 
     return (
         /**
@@ -46,25 +55,46 @@ export default function DecisionNode({ data, selected }: NodeProps) {
                 justifyContent: 'center',
                 position: 'relative',
                 cursor: 'pointer',
+                opacity: opacityVal,
+                transition: 'opacity 0.2s ease',
             }}
         >
+            {/* Change State Badge */}
+            {isChanged && (
+                <span style={{
+                    position: 'absolute',
+                    top: -12,
+                    fontSize: '0.5rem',
+                    fontWeight: 800,
+                    padding: '1px 5px',
+                    borderRadius: 3,
+                    background: STATE_STYLES[stateKey].badgeBg,
+                    color: STATE_STYLES[stateKey].badgeText,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    zIndex: 10,
+                }}>
+                    {STATE_STYLES[stateKey].label}
+                </span>
+            )}
+
             {/* React Flow handles sit on the wrapper, not the rotated diamond */}
             <Handle
                 type="target"
                 position={Position.Left}
-                style={{ background: C.border, width: 10, height: 10, border: 'none', left: 2 }}
+                style={{ background: isChanged ? STATE_STYLES[stateKey].border : C.border, width: 10, height: 10, border: 'none', left: 2 }}
             />
             <Handle
                 type="source"
                 position={Position.Right}
                 id="true"
-                style={{ background: C.border, width: 10, height: 10, border: 'none', right: 2, top: '35%' }}
+                style={{ background: isChanged ? STATE_STYLES[stateKey].border : C.border, width: 10, height: 10, border: 'none', right: 2, top: '35%' }}
             />
             <Handle
                 type="source"
                 position={Position.Right}
                 id="false"
-                style={{ background: 'rgba(245,158,11,0.45)', width: 10, height: 10, border: `1.5px solid ${C.border}`, right: 2, top: '65%' }}
+                style={{ background: 'rgba(245,158,11,0.45)', width: 10, height: 10, border: `1.5px solid ${isChanged ? STATE_STYLES[stateKey].border : C.border}`, right: 2, top: '65%' }}
             />
 
             {/* Rotated diamond shell */}
@@ -73,16 +103,14 @@ export default function DecisionNode({ data, selected }: NodeProps) {
                     width: DIAMOND,
                     height: DIAMOND,
                     transform: 'rotate(45deg)',
-                    background: C.bg,
-                    border: `1.5px solid ${selected ? '#fff' : C.border}`,
+                    background: isChanged ? STATE_STYLES[stateKey].bg : C.bg,
+                    border: `1.5px solid ${borderCol}`,
                     borderRadius: 10,
-                    boxShadow: selected
-                        ? `0 0 0 2px ${C.border}, 0 0 24px ${C.glow}`
-                        : `0 0 16px ${C.glow}`,
+                    boxShadow: boxShad,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    transition: 'box-shadow 0.2s ease',
+                    transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
                     backdropFilter: 'blur(12px)',
                 }}
             >

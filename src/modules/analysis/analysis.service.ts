@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { TestGenerator } from './test-generator.js';
+import { WorkflowExporter } from './workflow-exporter.js';
 
 export class AnalysisService {
     constructor(private prisma: PrismaClient) { }
@@ -396,5 +398,25 @@ export class AnalysisService {
                 commitSha: latestSnapshot.commitSha
             } : null
         };
+    }
+
+    async generateE2ETest(repoId: string, triggerNodeId: string, branchName: string = 'main', testType: 'playwright' | 'cypress' = 'playwright') {
+        return TestGenerator.generate({
+            repoId,
+            triggerNodeId,
+            branchName,
+            testType,
+            prisma: this.prisma
+        });
+    }
+
+    async exportWorkflow(repoId: string, triggerNodeId: string, branchName: string = 'main', exportType: 'asl' | 'temporal' = 'asl') {
+        return WorkflowExporter.export({
+            repoId,
+            triggerNodeId,
+            branchName,
+            exportType,
+            prisma: this.prisma
+        });
     }
 }

@@ -60,3 +60,6 @@ Thumbs.db
 # --- Orchestrator Specific ---
 orchestrator.log
 docs/architecture_state.json
+scratch/*
+tests/*
+node_modules/*

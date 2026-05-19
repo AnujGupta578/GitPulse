@@ -92,19 +92,61 @@ export class RepositorySyncPipeline {
 
             // STEP 6: Architecture (Semantic Workflow — SPEC.md §3.1)
             await updateJob('SYNTHESIZING_ARCHITECTURE', 95);
-            // Derive the local clone path — GitHubAdapter checks repos out under /tmp/gitpulse-clones/<owner>/<name>
-            let clonedRepoPath = process.env.REPO_CLONE_BASE_PATH
-                ? `${process.env.REPO_CLONE_BASE_PATH}/${repo.owner}/${repo.name}`
-                : `/tmp/gitpulse-clones/${repo.owner}/${repo.name}`;
+            
+            const os = await import('os');
+            const path = await import('path');
             const fs = await import('fs');
-            if (!fs.existsSync(clonedRepoPath)) {
-                clonedRepoPath = process.cwd();
+            const { execSync } = await import('child_process');
+            
+            // Derive the local clone path safely using OS temp directory
+            let clonedRepoPath = process.env.REPO_CLONE_BASE_PATH
+                ? path.join(process.env.REPO_CLONE_BASE_PATH, repo.owner, repo.name)
+                : path.join(os.tmpdir(), 'gitpulse-clones', repo.owner, repo.name);
+                
+            if (!fs.existsSync(clonedRepoPath) || !fs.existsSync(path.join(clonedRepoPath, '.git'))) {
+                console.log(`[SyncPipeline] Repository not found or corrupt locally. Cleaning and cloning into ${clonedRepoPath}...`);
+                if (fs.existsSync(clonedRepoPath)) {
+                    fs.rmSync(clonedRepoPath, { recursive: true, force: true });
+                }
+                fs.mkdirSync(clonedRepoPath, { recursive: true });
+                try {
+                    const cloneUrl = `https://x-access-token:${accessToken}@github.com/${repo.owner}/${repo.name}.git`;
+                    execSync(`git clone -c core.longpaths=true --depth 1 --branch ${branchName} "${cloneUrl}" .`, { cwd: clonedRepoPath, stdio: 'pipe' });
+                } catch (err: any) {
+                    const stderr = err.stderr?.toString() || err.message || String(err);
+                    console.error(`[SyncPipeline] Failed to clone repo locally:`, stderr);
+                    throw new Error(`Failed to clone repository locally for AST parsing: ${stderr.slice(0, 200)}`);
+                }
+            } else {
+                console.log(`[SyncPipeline] Repository found locally. Pulling latest changes in ${clonedRepoPath}...`);
+                try {
+                    execSync(`git fetch --depth 1 origin ${branchName} && git checkout ${branchName} && git pull origin ${branchName}`, { cwd: clonedRepoPath, stdio: 'pipe' });
+                } catch (err: any) {
+                    const stderr = err.stderr?.toString() || err.message || String(err);
+                    console.warn(`[SyncPipeline] Failed to pull latest changes, attempting clean clone:`, stderr);
+                    try {
+                        fs.rmSync(clonedRepoPath, { recursive: true, force: true });
+                        fs.mkdirSync(clonedRepoPath, { recursive: true });
+                        const cloneUrl = `https://x-access-token:${accessToken}@github.com/${repo.owner}/${repo.name}.git`;
+                        execSync(`git clone -c core.longpaths=true --depth 1 --branch ${branchName} "${cloneUrl}" .`, { cwd: clonedRepoPath, stdio: 'pipe' });
+                    } catch (retryErr: any) {
+                        const retryStderr = retryErr.stderr?.toString() || retryErr.message || String(retryErr);
+                        console.error(`[SyncPipeline] Clean clone retry failed:`, retryStderr);
+                        throw new Error(`Failed to clone repository locally after retry: ${retryStderr.slice(0, 200)}`);
+                    }
+                }
             }
+            const latestSnapshot = await this.prisma.architectureSnapshot.findFirst({
+                where: { branchId: branchRecord.id },
+                orderBy: { createdAt: 'desc' }
+            });
+
             const archPipeline = new ArchitecturePipeline(this.prisma);
             const archResult = await archPipeline.execute(repo.id, branchRecord.id, targetBranch.sha, {
                 repoPath: clonedRepoPath,   // ← Required by ArchitectureAgent for semantic analysis
                 repoId: repo.id, branchName, tree: tree.map((f: any) => ({ path: f.path, type: f.type })),
-                detectedServices: [], infraFiles: infraFileNodes.map((f: any) => f.path)
+                detectedServices: [], infraFiles: infraFileNodes.map((f: any) => f.path),
+                prevTopology: latestSnapshot?.topology || undefined
             });
 
             // STEP 7: Engineering Intelligence

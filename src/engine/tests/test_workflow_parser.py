@@ -713,3 +713,148 @@ class TestEdgeSchema:
         topology = assembler.assemble([], [a1, a2], [], [], raw_edges, {"a2": {"node_id": "ACTION::a2"}})
         for edge in topology["edges"]:
             assert edge["type"] in self.VALID_EDGE_TYPES
+
+
+# ===========================================================================
+# 9.  Git-Aware Visual Change Tracking tests
+# ===========================================================================
+
+class TestGitVisualChangeTracking:
+    """Validate Git diff extraction and change-tracking state tagging."""
+
+    def test_git_diff_lines_parser(self):
+        """Verify that get_git_diff_lines correctly parses unified=0 git diff format."""
+        mock_diff_output = (
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "@@ -10,3 +10,5 @@ import os\n"
+            "@@ -190 +191,2 @@ if __name__ == '__main__':\n"
+            "diff --git a/src/engine/parser.py b/src/engine/parser.py\n"
+            "--- a/src/engine/parser.py\n"
+            "+++ b/src/engine/parser.py\n"
+            "@@ -50,0 +51,10 @@ def test():\n"
+        )
+
+        import subprocess
+        from unittest.mock import MagicMock
+        with patch("subprocess.run") as mock_run:
+            original_run = subprocess.run
+            def side_effect(args, *args_list, **kwargs):
+                if isinstance(args, list) and len(args) > 0:
+                    if "rev-parse" in args:
+                        mock_res_ok = MagicMock()
+                        mock_res_ok.returncode = 0
+                        mock_res_ok.stdout = ""
+                        return mock_res_ok
+                    elif "diff" in args:
+                        mock_res_diff = MagicMock()
+                        mock_res_diff.returncode = 0
+                        mock_res_diff.stdout = mock_diff_output
+                        return mock_res_diff
+                try:
+                    return original_run(args, *args_list, **kwargs)
+                except Exception:
+                    mock_res = MagicMock()
+                    mock_res.returncode = 0
+                    mock_res.stdout = ""
+                    return mock_res
+            mock_run.side_effect = side_effect
+
+            from src.main import get_git_diff_lines
+            res = get_git_diff_lines("/tmp/fake-repo")
+
+            assert "src/main.py" in res
+            assert "src/engine/parser.py" in res
+            
+            # @@ -10,3 +10,5 @@ -> +10,5 -> lines 10 to 14
+            # @@ -190 +191,2 @@ -> +191,2 -> lines 191 to 192
+            assert res["src/main.py"] == [(10, 14), (191, 192)]
+            
+            # @@ -50,0 +51,10 @@ -> +51,10 -> lines 51 to 60
+            assert res["src/engine/parser.py"] == [(51, 60)]
+
+    def test_apply_visual_change_tracking(self):
+        """Validate state tagging (added, modified, deleted) based on git changes."""
+        from src.main import apply_visual_change_tracking
+
+        prev_topology = {
+            "nodes": [
+                {
+                    "id": "ACTION::unchangedFn",
+                    "type": "ACTION",
+                    "subtype": "SERVICE_METHOD",
+                    "label": "unchangedFn",
+                    "metadata": {"file": "src/service.ts", "line": 5}
+                },
+                {
+                    "id": "ACTION::modifiedFn",
+                    "type": "ACTION",
+                    "subtype": "SERVICE_METHOD",
+                    "label": "modifiedFn",
+                    "metadata": {"file": "src/service.ts", "line": 20}
+                },
+                {
+                    "id": "ACTION::deletedFn",
+                    "type": "ACTION",
+                    "subtype": "SERVICE_METHOD",
+                    "label": "deletedFn",
+                    "metadata": {"file": "src/service.ts", "line": 40}
+                }
+            ]
+        }
+
+        current_result = {
+            "topology": {
+                "nodes": [
+                    {
+                        "id": "ACTION::unchangedFn",
+                        "type": "ACTION",
+                        "subtype": "SERVICE_METHOD",
+                        "label": "unchangedFn",
+                        "metadata": {"file": "src/service.ts", "line": 5}
+                    },
+                    {
+                        "id": "ACTION::modifiedFn",
+                        "type": "ACTION",
+                        "subtype": "SERVICE_METHOD",
+                        "label": "modifiedFn",
+                        "metadata": {"file": "src/service.ts", "line": 20}
+                    },
+                    {
+                        "id": "ACTION::addedFn",
+                        "type": "ACTION",
+                        "subtype": "SERVICE_METHOD",
+                        "label": "addedFn",
+                        "metadata": {"file": "src/service.ts", "line": 80}
+                    }
+                ]
+            }
+        }
+
+        # Mock get_git_diff_lines to indicate line 20 of src/service.ts was modified
+        mock_changed_lines = {
+            "src/service.ts": [(18, 22)]
+        }
+
+        with patch("src.main.get_git_diff_lines", return_value=mock_changed_lines):
+            res = apply_visual_change_tracking("/tmp/fake-repo", current_result, prev_topology)
+            
+            nodes = res["topology"]["nodes"]
+            node_states = {n["id"]: n.get("state") for n in nodes}
+
+            # ACTION::unchangedFn should be normal
+            assert node_states["ACTION::unchangedFn"] == "normal"
+
+            # ACTION::modifiedFn should be modified since line 20 falls inside (18, 22)
+            assert node_states["ACTION::modifiedFn"] == "modified"
+
+            # ACTION::addedFn should be added since it wasn't in prev_topology
+            assert node_states["ACTION::addedFn"] == "added"
+
+            # ACTION::deletedFn should be re-injected and marked deleted since it is missing from current
+            assert node_states["ACTION::deletedFn"] == "deleted"
+            
+            # Verify the total nodes matches 4 (unchanged, modified, added, deleted)
+            assert len(nodes) == 4
+

@@ -1,0 +1,274 @@
+{
+  "Comment": "AWS Step Functions workflow for content-type registration and service worker management.",
+  "StartAt": "CheckValidServiceWorker",
+  "States": {
+    "CheckValidServiceWorker": {
+      "Type": "Task",
+      "Comment": "Checks if the service worker is valid.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:checkValidServiceWorkerLambda:$LATEST",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "HandleCheckValidServiceWorkerFailure"
+        }
+      ],
+      "ResultPath": "$.CheckValidServiceWorkerOutput",
+      "Next": "Choice_CheckValidServiceWorkerOutcome"
+    },
+    "Choice_CheckValidServiceWorkerOutcome": {
+      "Type": "Choice",
+      "Comment": "Decides next step based on checkValidServiceWorker result.",
+      "Choices": [
+        {
+          "Variable": "$.CheckValidServiceWorkerOutput.Payload.action",
+          "StringEquals": "unregister",
+          "Next": "UnregisterServiceWorker"
+        },
+        {
+          "Variable": "$.CheckValidServiceWorkerOutput.Payload.action",
+          "StringEquals": "registerValidSW",
+          "Next": "RegisterValidServiceWorker"
+        },
+        {
+          "Variable": "$.CheckValidServiceWorkerOutput.Payload.action",
+          "StringEquals": "fetch",
+          "Next": "FetchContent"
+        }
+      ],
+      "Default": "Succeed"
+    },
+    "UnregisterServiceWorker": {
+      "Type": "Task",
+      "Comment": "Unregisters the service worker.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:unregisterServiceWorkerLambda:$LATEST",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "HandleUnregisterFailure"
+        }
+      ],
+      "ResultPath": "$.UnregisterServiceWorkerOutput",
+      "Next": "Choice_UnregisterOutcome"
+    },
+    "Choice_UnregisterOutcome": {
+      "Type": "Choice",
+      "Comment": "Decides next step after unregistering.",
+      "Choices": [
+        {
+          "Variable": "$.UnregisterServiceWorkerOutput.Payload.action",
+          "StringEquals": "recurse_unregister",
+          "Next": "UnregisterServiceWorker"
+        },
+        {
+          "Variable": "$.UnregisterServiceWorkerOutput.Payload.action",
+          "StringEquals": "fetch",
+          "Next": "FetchContent"
+        }
+      ],
+      "Default": "Succeed"
+    },
+    "RegisterValidServiceWorker": {
+      "Type": "Task",
+      "Comment": "Registers a valid service worker.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:registerValidSWLambda:$LATEST",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "HandleRegisterValidSWFailure"
+        }
+      ],
+      "ResultPath": "$.RegisterValidServiceWorkerOutput",
+      "Next": "Choice_RegisterValidSWOutcome"
+    },
+    "Choice_RegisterValidSWOutcome": {
+      "Type": "Choice",
+      "Comment": "Decides next step after registering a valid service worker.",
+      "Choices": [
+        {
+          "Variable": "$.RegisterValidServiceWorkerOutput.Payload.action",
+          "StringEquals": "recurse_register",
+          "Next": "RegisterServiceWorker"
+        },
+        {
+          "Variable": "$.RegisterValidServiceWorkerOutput.Payload.action",
+          "StringEquals": "fetch",
+          "Next": "FetchContent"
+        }
+      ],
+      "Default": "Succeed"
+    },
+    "RegisterServiceWorker": {
+      "Type": "Task",
+      "Comment": "Registers the service worker.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:registerServiceWorkerLambda:$LATEST",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "HandleRegisterFailure"
+        }
+      ],
+      "ResultPath": "$.RegisterServiceWorkerOutput",
+      "Next": "Choice_RegisterOutcome"
+    },
+    "Choice_RegisterOutcome": {
+      "Type": "Choice",
+      "Comment": "Decides next step after registering.",
+      "Choices": [
+        {
+          "Variable": "$.RegisterServiceWorkerOutput.Payload.action",
+          "StringEquals": "checkValidServiceWorker",
+          "Next": "CheckValidServiceWorker"
+        },
+        {
+          "Variable": "$.RegisterServiceWorkerOutput.Payload.action",
+          "StringEquals": "registerValidSW",
+          "Next": "RegisterValidServiceWorker"
+        },
+        {
+          "Variable": "$.RegisterServiceWorkerOutput.Payload.action",
+          "StringEquals": "fetch",
+          "Next": "FetchContent"
+        }
+      ],
+      "Default": "Succeed"
+    },
+    "FetchContent": {
+      "Type": "Task",
+      "Comment": "Fetches external content via HTTP.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:fetchContentLambda:$LATEST",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "HandleFetchContentFailure"
+        }
+      ],
+      "ResultPath": "$.FetchContentOutput",
+      "End": true
+    },
+    "HandleCheckValidServiceWorkerFailure": {
+      "Type": "Fail",
+      "Comment": "Failed to check valid service worker.",
+      "Error": "CheckValidServiceWorkerFailed",
+      "Cause": "An error occurred during checkValidServiceWorker execution."
+    },
+    "HandleUnregisterFailure": {
+      "Type": "Fail",
+      "Comment": "Failed to unregister service worker.",
+      "Error": "UnregisterServiceWorkerFailed",
+      "Cause": "An error occurred during unregister execution."
+    },
+    "HandleRegisterValidSWFailure": {
+      "Type": "Fail",
+      "Comment": "Failed to register valid service worker.",
+      "Error": "RegisterValidServiceWorkerFailed",
+      "Cause": "An error occurred during registerValidSW execution."
+    },
+    "HandleRegisterFailure": {
+      "Type": "Fail",
+      "Comment": "Failed to register service worker.",
+      "Error": "RegisterServiceWorkerFailed",
+      "Cause": "An error occurred during register execution."
+    },
+    "HandleFetchContentFailure": {
+      "Type": "Fail",
+      "Comment": "Failed to fetch content.",
+      "Error": "FetchContentFailed",
+      "Cause": "An error occurred during fetch content execution."
+    },
+    "Succeed": {
+      "Type": "Succeed",
+      "Comment": "Workflow completed successfully."
+    }
+  }
+}

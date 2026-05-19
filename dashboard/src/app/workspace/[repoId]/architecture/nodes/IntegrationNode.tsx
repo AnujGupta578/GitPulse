@@ -1,15 +1,7 @@
-'use client';
-
-/**
- * IntegrationNode — SPEC.md §3.3
- * Emerald (#10B981) — leaf/sink indicator
- * Represents: DATABASE_WRITE, DATABASE_READ, EXTERNAL_HTTP, THIRD_PARTY_SDK
- */
-
 import React from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { Database, Globe, Package } from 'lucide-react';
-import { NODE_COLORS } from '../lib/nodeColors';
+import { NODE_COLORS, STATE_STYLES, type NodeStateKey } from '../lib/nodeColors';
 
 const C = NODE_COLORS.INTEGRATION;
 
@@ -33,21 +25,29 @@ export default function IntegrationNode({ data, selected }: NodeProps) {
     const operation = meta.operation ?? '';
     const model     = meta.model ?? '';
 
+    const stateKey = data?.state as NodeStateKey | undefined;
+    const isChanged = stateKey && STATE_STYLES[stateKey];
+    
+    const borderCol = isChanged ? STATE_STYLES[stateKey].border : (selected ? '#fff' : C.border);
+    const boxShad = selected
+        ? `0 0 0 2px ${isChanged ? STATE_STYLES[stateKey].border : C.border}, 0 0 24px ${isChanged ? STATE_STYLES[stateKey].glow : C.glow}`
+        : `0 0 12px ${isChanged ? STATE_STYLES[stateKey].glow : C.glow}`;
+    const opacityVal = stateKey === 'deleted' ? 0.65 : 1.0;
+
     return (
         <div
             id={`node-integration-${data?.id ?? 'unknown'}`}
             style={{
                 width: 220,
-                background: C.bg,
-                border: `1.5px ${borderStyle} ${selected ? '#fff' : C.border}`,
+                background: isChanged ? STATE_STYLES[stateKey].bg : C.bg,
+                border: `1.5px ${borderStyle} ${borderCol}`,
                 borderRadius: 12,
                 padding: '10px 14px',
                 position: 'relative',
                 backdropFilter: 'blur(12px)',
-                boxShadow: selected
-                    ? `0 0 0 2px ${C.border}, 0 0 24px ${C.glow}`
-                    : `0 0 12px ${C.glow}`,
-                transition: 'box-shadow 0.2s ease',
+                boxShadow: boxShad,
+                opacity: opacityVal,
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease',
                 cursor: 'pointer',
             }}
         >
@@ -55,19 +55,19 @@ export default function IntegrationNode({ data, selected }: NodeProps) {
             <Handle
                 type="target"
                 position={Position.Left}
-                style={{ background: C.border, width: 10, height: 10, border: 'none' }}
+                style={{ background: isChanged ? STATE_STYLES[stateKey].border : C.border, width: 10, height: 10, border: 'none' }}
             />
 
             {/* Header row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                 <span style={{
                     background: C.bg,
-                    border: `1px solid ${C.border}`,
+                    border: `1px solid ${isChanged ? STATE_STYLES[stateKey].border : C.border}`,
                     borderRadius: 6,
                     padding: '3px 5px',
                     display: 'flex',
                     alignItems: 'center',
-                    color: C.text,
+                    color: isChanged ? STATE_STYLES[stateKey].border : C.text,
                 }}>
                     <Icon size={12} strokeWidth={2.5} />
                 </span>
@@ -76,11 +76,26 @@ export default function IntegrationNode({ data, selected }: NodeProps) {
                     fontWeight: 700,
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
-                    color: C.text,
+                    color: isChanged ? STATE_STYLES[stateKey].border : C.text,
                 }}>
                     {subLabel}
                 </span>
-                {operation && (
+                {isChanged && (
+                    <span style={{
+                        marginLeft: 'auto',
+                        fontSize: '0.5rem',
+                        fontWeight: 800,
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                        background: STATE_STYLES[stateKey].badgeBg,
+                        color: STATE_STYLES[stateKey].badgeText,
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                    }}>
+                        {STATE_STYLES[stateKey].label}
+                    </span>
+                )}
+                {operation && !isChanged && (
                     <span style={{
                         marginLeft: 'auto',
                         fontSize: '0.55rem',
@@ -131,8 +146,8 @@ export default function IntegrationNode({ data, selected }: NodeProps) {
                 top: 8, right: 10,
                 width: 6, height: 6,
                 borderRadius: '50%',
-                background: C.border,
-                boxShadow: `0 0 6px ${C.border}`,
+                background: isChanged ? STATE_STYLES[stateKey].border : C.border,
+                boxShadow: `0 0 6px ${isChanged ? STATE_STYLES[stateKey].border : C.border}`,
                 opacity: 0.8,
             }} />
 
@@ -141,7 +156,7 @@ export default function IntegrationNode({ data, selected }: NodeProps) {
                 bottom: 0, left: '15%', right: '15%',
                 height: 2,
                 borderRadius: '0 0 2px 2px',
-                background: `linear-gradient(90deg, transparent, ${C.border}, transparent)`,
+                background: `linear-gradient(90deg, transparent, ${isChanged ? STATE_STYLES[stateKey].border : C.border}, transparent)`,
                 opacity: 0.5,
             }} />
         </div>

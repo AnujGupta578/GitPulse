@@ -78,4 +78,32 @@ export async function analysisRoutes(fastify: FastifyInstance, options: Analysis
         const summary = await service.getSummary(request.params.id);
         return successResponse(summary);
     });
+
+    fastify.post('/api/repositories/:id/generate-test', async (request: any, reply) => {
+        const { id } = request.params;
+        const { triggerNodeId, branch = 'main', testType = 'playwright' } = request.body || {};
+        try {
+            if (!triggerNodeId) {
+                return reply.status(400).send(errorResponse('triggerNodeId is required'));
+            }
+            const testResult = await service.generateE2ETest(id, triggerNodeId, branch, testType);
+            return successResponse(testResult);
+        } catch (error: any) {
+            return reply.status(500).send(errorResponse(error.message));
+        }
+    });
+
+    fastify.post('/api/repositories/:id/export-workflow', async (request: any, reply) => {
+        const { id } = request.params;
+        const { triggerNodeId, branch = 'main', exportType = 'asl' } = request.body || {};
+        try {
+            if (!triggerNodeId) {
+                return reply.status(400).send(errorResponse('triggerNodeId is required'));
+            }
+            const exportResult = await service.exportWorkflow(id, triggerNodeId, branch, exportType);
+            return successResponse(exportResult);
+        } catch (error: any) {
+            return reply.status(500).send(errorResponse(error.message));
+        }
+    });
 }

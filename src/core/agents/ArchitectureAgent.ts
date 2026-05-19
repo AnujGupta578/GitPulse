@@ -98,7 +98,7 @@ export class ArchitectureAgent extends BaseAgent {
     }
 
     async execute(task: AgentTask): Promise<AgentResult> {
-        const { repoPath, repoId, branchName } = task.payload || {};
+        const { repoPath, repoId, branchName, prevTopology } = task.payload || {};
 
         if (!repoPath) {
             return {
@@ -114,7 +114,7 @@ export class ArchitectureAgent extends BaseAgent {
             response = await fetch(PYTHON_ENGINE_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repo_path: repoPath }),
+                body: JSON.stringify({ repo_path: repoPath, prev_topology: prevTopology }),
                 signal: AbortSignal.timeout(ANALYSIS_TIMEOUT_MS),
             });
         } catch (err: any) {
